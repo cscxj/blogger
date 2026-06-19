@@ -24,9 +24,19 @@ def owned_post_or_404(db: Session, site_id: str, post_id: str) -> models.Post:
     return post
 
 
-def assert_post_slug_available(db: Session, site_id: str, slug: str, current_id: str | None = None) -> None:
+def assert_post_slug_available(
+    db: Session,
+    site_id: str,
+    language: str,
+    slug: str,
+    current_id: str | None = None,
+) -> None:
     post = db.execute(
-        select(models.Post).where(models.Post.site_id == site_id, models.Post.slug == slug)
+        select(models.Post).where(
+            models.Post.site_id == site_id,
+            models.Post.language == language,
+            models.Post.slug == slug,
+        )
     ).scalar_one_or_none()
     if post and post.id != current_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Post slug already exists")
@@ -101,7 +111,7 @@ def create_post(
 ) -> models.Post:
     site = owned_site_or_404(db, user.id, site_id)
     assert_language_belongs_to_site(site, payload.language)
-    assert_post_slug_available(db, site_id, payload.slug)
+    assert_post_slug_available(db, site_id, payload.language, payload.slug)
     assert_category_belongs_to_site(db, site_id, payload.category_id)
     data = payload.model_dump()
     post = models.Post(
@@ -138,12 +148,18 @@ def update_post(
     site = owned_site_or_404(db, user.id, site_id)
     post = owned_post_or_404(db, site_id, post_id)
     data = payload.model_dump(exclude_unset=True)
-    if "slug" in data:
-        assert_post_slug_available(db, site_id, data["slug"], current_id=post.id)
     if "category_id" in data:
         assert_category_belongs_to_site(db, site_id, data["category_id"])
     if "language" in data:
         assert_language_belongs_to_site(site, data["language"])
+    if "slug" in data or "language" in data:
+        assert_post_slug_available(
+            db,
+            site_id,
+            data.get("language", post.language),
+            data.get("slug", post.slug),
+            current_id=post.id,
+        )
     if "markdown_content" in data:
         post.html_content = render_markdown(data["markdown_content"] or "")
     for field, value in data.items():

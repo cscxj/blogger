@@ -101,7 +101,7 @@ def test_blog_lifecycle_with_access_key() -> None:
         f"/api/sites/{site_id}/posts",
         json={
             "title": "Chinese Post",
-            "slug": "chinese-post",
+            "slug": "first-post",
             "language": "zh-CN",
             "markdown_content": "# 你好",
         },
@@ -109,6 +109,19 @@ def test_blog_lifecycle_with_access_key() -> None:
     )
     assert custom_language_post.status_code == 201, custom_language_post.text
     assert custom_language_post.json()["language"] == "zh-CN"
+    custom_language_post_id = custom_language_post.json()["id"]
+
+    duplicate_language_slug_post = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "Duplicate English Post",
+            "slug": "first-post",
+            "language": "en",
+            "markdown_content": "# Duplicate",
+        },
+        headers=key_headers,
+    )
+    assert duplicate_language_slug_post.status_code == 409, duplicate_language_slug_post.text
 
     invalid_language_post = client.post(
         f"/api/sites/{site_id}/posts",
@@ -152,12 +165,17 @@ def test_blog_lifecycle_with_access_key() -> None:
     )
     assert slug_search_response.status_code == 200, slug_search_response.text
     slug_search_page = slug_search_response.json()
-    assert slug_search_page["total"] == 1
+    assert slug_search_page["total"] == 2
     assert slug_search_page["items"][0]["slug"] == "first-post"
 
     publish_response = client.post(f"/api/sites/{site_id}/posts/{post_id}/publish", headers=key_headers)
     assert publish_response.status_code == 200, publish_response.text
     assert publish_response.json()["status"] == "published"
+    publish_custom_language_response = client.post(
+        f"/api/sites/{site_id}/posts/{custom_language_post_id}/publish",
+        headers=key_headers,
+    )
+    assert publish_custom_language_response.status_code == 200, publish_custom_language_response.text
 
     public_list = client.get("/api/integration/sites/main-site/posts?language=en", headers=key_headers)
     assert public_list.status_code == 200, public_list.text
@@ -166,7 +184,15 @@ def test_blog_lifecycle_with_access_key() -> None:
 
     public_detail = client.get("/api/integration/sites/main-site/posts/first-post", headers=key_headers)
     assert public_detail.status_code == 200, public_detail.text
+    assert public_detail.json()["language"] == "en"
     assert public_detail.json()["meta_title"] == "First SEO title"
+    public_custom_language_detail = client.get(
+        "/api/integration/sites/main-site/posts/first-post?language=zh-CN",
+        headers=key_headers,
+    )
+    assert public_custom_language_detail.status_code == 200, public_custom_language_detail.text
+    assert public_custom_language_detail.json()["language"] == "zh-CN"
+    assert public_custom_language_detail.json()["title"] == "Chinese Post"
 
     upload = client.post(
         "/api/uploads",

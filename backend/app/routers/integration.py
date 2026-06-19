@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
@@ -38,6 +38,13 @@ def integration_post(site: models.Site, post: models.Post) -> schemas.Integratio
         author=post.author,
         category=post.category,
     )
+
+
+def default_language_key(site: models.Site) -> str | None:
+    for language in site.languages or []:
+        if isinstance(language, dict) and language.get("key"):
+            return str(language["key"])
+    return None
 
 
 def assert_language_belongs_to_site(site: models.Site, language: str | None) -> None:
@@ -118,11 +125,14 @@ def get_integration_post(
     ]
     if language:
         filters.append(models.Post.language == language)
-    post = db.execute(
+    stmt = (
         select(models.Post)
         .options(selectinload(models.Post.author), selectinload(models.Post.category))
         .where(*filters)
-    ).scalar_one_or_none()
+    )
+    if not language and (default_language := default_language_key(site)):
+        stmt = stmt.order_by(case((models.Post.language == default_language, 0), else_=1))
+    post = db.execute(stmt.limit(1)).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     return integration_post(site, post)

@@ -17,6 +17,13 @@ def _column_names(table: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table)}
 
 
+def _unique_constraint_names(table: str) -> set[str]:
+    inspector = inspect(engine)
+    if not inspector.has_table(table):
+        return set()
+    return {constraint["name"] for constraint in inspector.get_unique_constraints(table) if constraint.get("name")}
+
+
 def _add_column(table: str, ddl: str) -> None:
     with engine.begin() as connection:
         connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
@@ -43,6 +50,17 @@ def ensure_schema() -> None:
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql" and posts and "language" in posts:
             connection.execute(text("ALTER TABLE posts ALTER COLUMN language TYPE VARCHAR(64)"))
+            post_constraints = _unique_constraint_names("posts")
+            if "uq_posts_site_slug" in post_constraints:
+                connection.execute(text("ALTER TABLE posts DROP CONSTRAINT uq_posts_site_slug"))
+                post_constraints.remove("uq_posts_site_slug")
+            if "uq_posts_site_language_slug" not in post_constraints:
+                connection.execute(
+                    text(
+                        "ALTER TABLE posts "
+                        "ADD CONSTRAINT uq_posts_site_language_slug UNIQUE (site_id, language, slug)"
+                    )
+                )
         connection.execute(text("UPDATE users SET role = 'operator' WHERE role IS NULL"))
         if sites:
             if engine.dialect.name == "postgresql":

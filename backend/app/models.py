@@ -90,7 +90,7 @@ class Category(TimestampMixin, Base):
 
 class Post(TimestampMixin, Base):
     __tablename__ = "posts"
-    __table_args__ = (UniqueConstraint("site_id", "slug", name="uq_posts_site_slug"),)
+    __table_args__ = (UniqueConstraint("site_id", "language", "slug", name="uq_posts_site_language_slug"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)

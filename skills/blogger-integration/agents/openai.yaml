@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blogger Integration"
+  short_description: "Connect product sites to Blogger APIs"
+  default_prompt: "Use $blogger-integration to connect this product website to the shared Blogger API."

@@ -1,0 +1,67 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app import models
+from app.core.security import ACCESS_KEY_PREFIX, decode_access_token, hash_access_key
+from app.db import get_db
+
+
+@dataclass
+class Principal:
+    user: models.User
+    auth_type: str
+    access_key: models.AccessKey | None = None
+
+
+def _bearer_token(request: Request) -> str | None:
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token
+
+
+def get_current_principal(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_access_key: str | None = Header(default=None, alias="X-Access-Key"),
+) -> Principal:
+    token = _bearer_token(request)
+    raw_access_key = x_access_key or (token if token and token.startswith(ACCESS_KEY_PREFIX) else None)
+
+    if raw_access_key:
+        key_hash = hash_access_key(raw_access_key)
+        access_key = db.execute(
+            select(models.AccessKey).where(
+                models.AccessKey.key_hash == key_hash,
+                models.AccessKey.revoked_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if not access_key:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access key")
+        user = db.get(models.User, access_key.user_id)
+        if not user or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+        access_key.last_used_at = datetime.now(timezone.utc)
+        db.add(access_key)
+        db.commit()
+        return Principal(user=user, auth_type="access_key", access_key=access_key)
+
+    if token:
+        user_id = decode_access_token(token)
+        if user_id:
+            user = db.get(models.User, user_id)
+            if user and user.is_active:
+                return Principal(user=user, auth_type="jwt")
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+
+def require_user(principal: Principal = Depends(get_current_principal)) -> models.User:
+    return principal.user

@@ -1,0 +1,14 @@
+bleach==6.2.0
+bcrypt==4.0.1
+email-validator==2.3.0
+fastapi==0.125.0
+httpx==0.28.1
+markdown==3.10
+passlib[bcrypt]==1.7.4
+psycopg[binary]==3.3.2
+pydantic==2.12.5
+PyJWT==2.10.1
+pytest==9.0.2
+python-dotenv==1.2.1
+SQLAlchemy==2.0.45
+uvicorn[standard]==0.38.0

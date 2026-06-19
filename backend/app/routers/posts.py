@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
@@ -75,8 +75,9 @@ def list_posts(
         filters.append(models.Post.category_id == category_id)
     if language:
         filters.append(models.Post.language == language)
-    if q:
-        filters.append(models.Post.title.ilike(f"%{q}%"))
+    if q and (search := q.strip()):
+        term = f"%{search}%"
+        filters.append(or_(models.Post.title.ilike(term), models.Post.slug.ilike(term)))
 
     total = db.execute(select(func.count(models.Post.id)).where(*filters)).scalar_one()
     stmt = (

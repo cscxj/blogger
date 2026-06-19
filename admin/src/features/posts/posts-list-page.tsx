@@ -160,6 +160,7 @@ export function PostsListPage({
             <TableHeader>
               <TableRow>
                 <TableHead>{t("posts.title")}</TableHead>
+                <TableHead className="w-24">{t("posts.coverImage")}</TableHead>
                 <TableHead>{t("posts.language")}</TableHead>
                 <TableHead>{t("posts.category")}</TableHead>
                 <TableHead>{t("posts.status")}</TableHead>
@@ -173,6 +174,18 @@ export function PostsListPage({
                   <TableCell>
                     <div className="font-medium">{post.title}</div>
                     <div className="text-xs text-muted-foreground">{t("posts.path", { slug: post.slug })}</div>
+                  </TableCell>
+                  <TableCell>
+                    {post.cover_image_url ? (
+                      <img
+                        src={post.cover_image_url}
+                        alt=""
+                        className="h-11 w-16 rounded-md border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{t("common.none")}</span>
+                    )}
                   </TableCell>
                   <TableCell>{siteLanguageLabel(site, post.language)}</TableCell>
                   <TableCell>{post.category?.name ?? t("common.none")}</TableCell>

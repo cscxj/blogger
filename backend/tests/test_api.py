@@ -144,6 +144,16 @@ def test_blog_lifecycle_with_access_key() -> None:
     page = list_response.json()
     assert page["total"] == 1
     assert page["items"][0]["slug"] == "first-post"
+    assert page["items"][0]["cover_image_url"] == "https://example.com/cover.png"
+
+    slug_search_response = client.get(
+        f"/api/sites/{site_id}/posts?q=first-po",
+        headers=key_headers,
+    )
+    assert slug_search_response.status_code == 200, slug_search_response.text
+    slug_search_page = slug_search_response.json()
+    assert slug_search_page["total"] == 1
+    assert slug_search_page["items"][0]["slug"] == "first-post"
 
     publish_response = client.post(f"/api/sites/{site_id}/posts/{post_id}/publish", headers=key_headers)
     assert publish_response.status_code == 200, publish_response.text

@@ -1,9 +1,21 @@
 # Blogger CLI Reference
 
+All API-contacting commands in this reference assume the user has already confirmed the target API URL and authentication for the intended environment. Do not run them against CLI defaults, discovered local config, or `http://localhost:8000` unless the user explicitly says the target is local.
+
+Before operating, confirm:
+
+- `BLOGGER_API_URL` or an explicit `--api-url`.
+- `BLOGGER_ACCESS_KEY` or an explicit `--access-key`.
+- `siteId` for admin/content/category commands, or `siteSlug` for integration reads.
+- The target site's language key when using `--language`.
+
+If any required value is missing, ask the user for it before running `sites list`, `users me`, `integration sites`, or any other API command. If the user does not know the `siteId`, ask whether you may list sites after API URL and auth are confirmed. Use `config get` only when the user explicitly asks to inspect local CLI config; it does not satisfy the configuration gate by itself.
+
 ## Auth And Config
 
 ```bash
 blogger config set --api-url https://blogger-api-xxxxx.run.app --access-key blog_sk_...
+# Only when the user explicitly asks to inspect local CLI config:
 blogger config get
 blogger auth login --email user@example.com --password '...' --create-key cli
 blogger auth register --email user@example.com --password '...' --nickname User --create-key cli
@@ -14,7 +26,7 @@ blogger auth register --email user@example.com --password '...' --nickname User 
 `sites create`, `sites update`, and `sites delete` require `super_admin`.
 
 ```bash
-blogger sites list
+BLOGGER_API_URL=https://blogger-api-xxxxx.run.app BLOGGER_ACCESS_KEY=blog_sk_... blogger sites list
 blogger sites create --name "Main Site" --slug main-site --base-url https://example.com --language en-US:English --language zh-Hans:简体中文
 blogger sites update <siteId> --base-url https://example.com
 blogger sites update <siteId> --language en-US:English --language zh-Hans:简体中文 --language ja-JP:日本語

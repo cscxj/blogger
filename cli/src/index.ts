@@ -28,7 +28,7 @@ const ImageContentTypesByExtension: Record<string, string> = {
 const program = new Command()
   .name('blogger')
   .description('Operate the shared Blogger API')
-  .version('0.1.0')
+  .version('0.1.1')
   .option('--api-url <url>', 'API base URL')
   .option('--access-key <key>', 'AccessKey or temporary JWT credential')
 

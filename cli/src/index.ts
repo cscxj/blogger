@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs'
+import { extname } from 'node:path'
 import { stdin } from 'node:process'
 import { Command } from 'commander'
 import { z } from 'zod'
@@ -15,6 +16,14 @@ type GlobalOptions = {
 const StatusSchema = z.enum(['draft', 'published'])
 const LanguageKeySchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/)
 const LanguageLabelSchema = z.string().trim().min(1).max(120)
+const ImageContentTypesByExtension: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+}
 
 const program = new Command()
   .name('blogger')
@@ -53,11 +62,42 @@ async function readText(path?: string) {
   return readFileSync(path, 'utf8')
 }
 
+function imageContentTypeFromBytes(data: Buffer) {
+  if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png'
+  }
+  if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  const gifHeader = data.subarray(0, 6).toString('ascii')
+  if (gifHeader === 'GIF87a' || gifHeader === 'GIF89a') {
+    return 'image/gif'
+  }
+  if (data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp'
+  }
+
+  const svgHeader = data.subarray(0, 512).toString('utf8').trimStart().toLowerCase()
+  if (svgHeader.startsWith('<svg') || (svgHeader.startsWith('<?xml') && svgHeader.includes('<svg'))) {
+    return 'image/svg+xml'
+  }
+
+  return undefined
+}
+
+function imageContentTypeFromPath(path: string) {
+  return ImageContentTypesByExtension[extname(path).toLowerCase()]
+}
+
+function detectImageContentType(path: string, data: Buffer) {
+  return imageContentTypeFromBytes(data) || imageContentTypeFromPath(path) || 'application/octet-stream'
+}
+
 async function uploadImage(path: string, kind: string): Promise<{ url: string }> {
   const form = new FormData()
   form.set('kind', kind)
   const data = readFileSync(path)
-  form.set('file', new Blob([data]), path.split(/[\\/]/).pop() || 'upload')
+  form.set('file', new Blob([data], { type: detectImageContentType(path, data) }), path.split(/[\\/]/).pop() || 'upload')
   return client().request<{ url: string }>('/api/uploads', { method: 'POST', body: form })
 }
 

@@ -1,3 +1,4 @@
+import base64
 import os
 from pathlib import Path
 
@@ -18,6 +19,10 @@ Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 client = TestClient(app)
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+    "AAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
 
 
 def test_blog_lifecycle_with_access_key() -> None:
@@ -161,6 +166,45 @@ def test_blog_lifecycle_with_access_key() -> None:
     )
     assert upload.status_code == 200, upload.text
     assert upload.json()["url"].startswith("data:image/png;base64,")
+
+    png_upload_without_mime = client.post(
+        "/api/uploads",
+        data={"kind": "cover"},
+        files={
+            "file": (
+                "cover.png",
+                PNG_1X1,
+                "application/octet-stream",
+            )
+        },
+        headers=jwt_headers,
+    )
+    assert png_upload_without_mime.status_code == 200, png_upload_without_mime.text
+    assert png_upload_without_mime.json()["url"].startswith("data:image/png;base64,")
+
+    invalid_upload_without_mime = client.post(
+        "/api/uploads",
+        data={"kind": "cover"},
+        files={"file": ("cover", b"not an image", "application/octet-stream")},
+        headers=jwt_headers,
+    )
+    assert invalid_upload_without_mime.status_code == 400, invalid_upload_without_mime.text
+
+    invalid_png_upload_without_mime = client.post(
+        "/api/uploads",
+        data={"kind": "cover"},
+        files={"file": ("cover.png", b"not an image", "application/octet-stream")},
+        headers=jwt_headers,
+    )
+    assert invalid_png_upload_without_mime.status_code == 400, invalid_png_upload_without_mime.text
+
+    invalid_upload_with_image_filename = client.post(
+        "/api/uploads",
+        data={"kind": "cover"},
+        files={"file": ("cover.png", b"not an image", "text/plain")},
+        headers=jwt_headers,
+    )
+    assert invalid_upload_with_image_filename.status_code == 400, invalid_upload_with_image_filename.text
 
     operator_register = client.post(
         "/api/auth/register",

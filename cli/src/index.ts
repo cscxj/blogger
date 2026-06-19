@@ -13,24 +13,8 @@ type GlobalOptions = {
 }
 
 const StatusSchema = z.enum(['draft', 'published'])
-const LanguageSchema = z.enum([
-  'en',
-  'zh',
-  'es',
-  'fr',
-  'de',
-  'ja',
-  'ko',
-  'pt',
-  'it',
-  'nl',
-  'ru',
-  'ar',
-  'hi',
-  'id',
-  'vi',
-  'th',
-])
+const LanguageKeySchema = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/)
+const LanguageLabelSchema = z.string().trim().min(1).max(120)
 
 const program = new Command()
   .name('blogger')
@@ -79,6 +63,33 @@ async function uploadImage(path: string, kind: string): Promise<{ url: string }>
 
 function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>
+}
+
+function collect(value: string, previous: string[] = []) {
+  return [...previous, value]
+}
+
+function parseLanguageKey(value: string) {
+  return LanguageKeySchema.parse(value)
+}
+
+function parseSiteLanguages(values?: string[]) {
+  if (!values?.length) return undefined
+  const languages = values.map((value) => {
+    const separator = value.indexOf(':')
+    if (separator <= 0 || separator === value.length - 1) {
+      throw new Error('Language must use key:label format, for example en-US:English')
+    }
+    return {
+      key: parseLanguageKey(value.slice(0, separator)),
+      label: LanguageLabelSchema.parse(value.slice(separator + 1)),
+    }
+  })
+  const keys = new Set(languages.map((language) => language.key))
+  if (keys.size !== languages.length) {
+    throw new Error('Language keys must be unique')
+  }
+  return languages
 }
 
 const config = program.command('config').description('Manage local CLI config')
@@ -271,7 +282,8 @@ sites
   .requiredOption('--slug <slug>', 'Site slug')
   .option('--base-url <url>', 'Site base URL')
   .option('--description <description>', 'Description')
-  .action(async (options: { name: string; slug: string; baseUrl?: string; description?: string }) => {
+  .option('--language <key:label>', 'Configured language, repeatable. Example: --language en-US:English', collect, [])
+  .action(async (options: { name: string; slug: string; baseUrl?: string; description?: string; language?: string[] }) => {
     requiredCredential()
     print(
       await client().request('/api/sites', {
@@ -281,6 +293,7 @@ sites
           slug: options.slug,
           base_url: options.baseUrl,
           description: options.description,
+          languages: parseSiteLanguages(options.language),
         }),
       }),
     )
@@ -292,7 +305,8 @@ sites
   .option('--slug <slug>', 'Site slug')
   .option('--base-url <url>', 'Site base URL')
   .option('--description <description>', 'Description')
-  .action(async (id: string, options: { name?: string; slug?: string; baseUrl?: string; description?: string }) => {
+  .option('--language <key:label>', 'Configured language, repeatable. Replaces the site language list.', collect, [])
+  .action(async (id: string, options: { name?: string; slug?: string; baseUrl?: string; description?: string; language?: string[] }) => {
     requiredCredential()
     print(
       await client().request(`/api/sites/${id}`, {
@@ -303,6 +317,7 @@ sites
             slug: options.slug,
             base_url: options.baseUrl,
             description: options.description,
+            languages: parseSiteLanguages(options.language),
           }),
         ),
       }),
@@ -375,7 +390,7 @@ const posts = program.command('posts').description('Manage posts')
 posts
   .command('list')
   .requiredOption('--site <siteId>', 'Site ID')
-  .option('--language <code>', 'Language short code')
+  .option('--language <key>', 'Site language key')
   .option('--category-id <id>', 'Category ID')
   .option('--status <status>', 'draft or published')
   .option('--query <text>', 'Search title')
@@ -393,7 +408,7 @@ posts
     }) => {
     requiredCredential()
       const params = new URLSearchParams({ limit: options.limit, offset: options.offset })
-      if (options.language) params.set('language', LanguageSchema.parse(options.language))
+      if (options.language) params.set('language', parseLanguageKey(options.language))
       if (options.categoryId) params.set('category_id', options.categoryId)
       if (options.status) params.set('status', StatusSchema.parse(options.status))
       if (options.query) params.set('q', options.query)
@@ -415,7 +430,7 @@ posts
   .requiredOption('--title <title>', 'Post title')
   .requiredOption('--slug <slug>', 'Post slug')
   .requiredOption('--markdown <path>', 'Markdown file path, or - for stdin')
-  .option('--language <code>', 'Language short code', 'en')
+  .requiredOption('--language <key>', 'Site language key configured on the site')
   .option('--category-id <id>', 'Category ID')
   .option('--excerpt <excerpt>', 'Excerpt')
   .option('--cover-image <path>', 'Upload cover image from file')
@@ -451,7 +466,7 @@ posts
           body: JSON.stringify({
             title: options.title,
             slug: options.slug,
-            language: LanguageSchema.parse(options.language),
+            language: parseLanguageKey(options.language),
             markdown_content: markdownContent,
             category_id: options.categoryId,
             excerpt: options.excerpt,
@@ -470,7 +485,7 @@ posts
   .requiredOption('--site <siteId>', 'Site ID')
   .option('--title <title>', 'Post title')
   .option('--slug <slug>', 'Post slug')
-  .option('--language <code>', 'Language short code')
+  .option('--language <key>', 'Site language key')
   .option('--markdown <path>', 'Markdown file path, or - for stdin')
   .option('--category-id <id>', 'Category ID')
   .option('--excerpt <excerpt>', 'Excerpt')
@@ -510,7 +525,7 @@ posts
             compact({
               title: options.title,
               slug: options.slug,
-              language: options.language ? LanguageSchema.parse(options.language) : undefined,
+              language: options.language ? parseLanguageKey(options.language) : undefined,
               markdown_content: options.markdown ? await readText(options.markdown) : undefined,
               category_id: options.categoryId,
               excerpt: options.excerpt,
@@ -569,14 +584,14 @@ integration
   .command('posts')
   .requiredOption('--site-slug <slug>', 'Site slug')
   .option('--category-slug <slug>', 'Category slug')
-  .option('--language <code>', 'Language short code')
+  .option('--language <key>', 'Site language key')
   .option('--limit <number>', 'Limit', '20')
   .option('--offset <number>', 'Offset', '0')
   .action(async (options: { siteSlug: string; categorySlug?: string; language?: string; limit: string; offset: string }) => {
     requiredCredential()
     const params = new URLSearchParams({ limit: options.limit, offset: options.offset })
     if (options.categorySlug) params.set('category_slug', options.categorySlug)
-    if (options.language) params.set('language', LanguageSchema.parse(options.language))
+    if (options.language) params.set('language', parseLanguageKey(options.language))
     print(await client().request(`/api/integration/sites/${options.siteSlug}/posts?${params}`))
   })
 
@@ -584,11 +599,11 @@ integration
   .command('post')
   .requiredOption('--site-slug <slug>', 'Site slug')
   .requiredOption('--post-slug <slug>', 'Post slug')
-  .option('--language <code>', 'Language short code')
+  .option('--language <key>', 'Site language key')
   .action(async (options: { siteSlug: string; postSlug: string; language?: string }) => {
     requiredCredential()
     const params = new URLSearchParams()
-    if (options.language) params.set('language', LanguageSchema.parse(options.language))
+    if (options.language) params.set('language', parseLanguageKey(options.language))
     const suffix = params.size ? `?${params}` : ''
     print(await client().request(`/api/integration/sites/${options.siteSlug}/posts/${options.postSlug}${suffix}`))
   })

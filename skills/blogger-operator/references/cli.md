@@ -15,12 +15,14 @@ blogger auth register --email user@example.com --password '...' --nickname User 
 
 ```bash
 blogger sites list
-blogger sites create --name "Main Site" --slug main-site --base-url https://example.com
+blogger sites create --name "Main Site" --slug main-site --base-url https://example.com --language en-US:English --language zh-Hans:简体中文
 blogger sites update <siteId> --base-url https://example.com
+blogger sites update <siteId> --language en-US:English --language zh-Hans:简体中文 --language ja-JP:日本語
 blogger sites delete <siteId>
 ```
 
 When `base_url` is set or changed, the API tries to fetch and store `icon_url`.
+Language options are configured per site. Repeating `--language key:label` on `sites update` replaces the full language list.
 
 ## Categories
 
@@ -36,9 +38,9 @@ blogger categories delete <categoryId> --site <siteId>
 Create/update never accepts `status`; publish state changes use dedicated commands.
 
 ```bash
-blogger posts list --site <siteId> --language en --category-id <categoryId> --status draft --query launch --limit 10 --offset 0
+blogger posts list --site <siteId> --language en-US --category-id <categoryId> --status draft --query launch --limit 10 --offset 0
 blogger posts get <postId> --site <siteId>
-blogger posts create --site <siteId> --title "Launch" --slug launch --language en --markdown ./launch.md
+blogger posts create --site <siteId> --title "Launch" --slug launch --language en-US --markdown ./launch.md
 blogger posts update <postId> --site <siteId> --title "Launch v2" --markdown ./launch.md
 blogger posts publish <postId> --site <siteId>
 blogger posts unpublish <postId> --site <siteId>
@@ -93,6 +95,6 @@ blogger users update --nickname "Editor" --avatar-url https://...
 ```bash
 blogger integration sites
 blogger integration categories --site-slug main-site
-blogger integration posts --site-slug main-site --language en --category-slug product --limit 20 --offset 0
-blogger integration post --site-slug main-site --post-slug launch --language en
+blogger integration posts --site-slug main-site --language en-US --category-slug product --limit 20 --offset 0
+blogger integration post --site-slug main-site --post-slug launch --language en-US
 ```

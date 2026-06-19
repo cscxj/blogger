@@ -27,6 +27,26 @@ GET /api/integration/sites
 ```
 
 Returns sites owned by the AccessKey owner.
+Each site includes `languages`, a site-specific list of language keys and labels:
+
+```json
+[
+  {
+    "id": "uuid",
+    "name": "My Product Site",
+    "slug": "my-product-site",
+    "base_url": "https://example.com",
+    "icon_url": "https://example.com/favicon.ico",
+    "languages": [
+      { "key": "en-US", "label": "English" },
+      { "key": "zh-Hans", "label": "简体中文" }
+    ],
+    "description": null,
+    "created_at": "2026-06-19T12:00:00Z",
+    "updated_at": "2026-06-19T12:00:00Z"
+  }
+]
+```
 
 ### List Categories
 
@@ -53,12 +73,10 @@ Returns:
 ### List Published Posts
 
 ```http
-GET /api/integration/sites/{site_slug}/posts?limit=20&offset=0&category_slug=product&language=en
+GET /api/integration/sites/{site_slug}/posts?limit=20&offset=0&category_slug=product&language=en-US
 ```
 
-`category_slug` and `language` are optional. `language` uses standard short language codes:
-
-`en`, `zh`, `es`, `fr`, `de`, `ja`, `ko`, `pt`, `it`, `nl`, `ru`, `ar`, `hi`, `id`, `vi`, `th`.
+`category_slug` and `language` are optional. `language` must be one of the target site's configured language keys.
 
 Returns:
 
@@ -69,7 +87,7 @@ Returns:
     "site_slug": "my-product-site",
     "title": "First post",
     "slug": "first-post",
-    "language": "en",
+    "language": "en-US",
     "path": "/blog/first-post",
     "html_content": "<h1>First post</h1>",
     "excerpt": "Short summary",
@@ -101,7 +119,7 @@ Returns:
 ### Get Published Post
 
 ```http
-GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en
+GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en-US
 ```
 
 Returns the same object shape as one list item. `language` is optional.
@@ -129,11 +147,11 @@ async function bloggerFetch<T>(config: BloggerConfig, path: string): Promise<T> 
   return response.json() as Promise<T>
 }
 
-export function listBlogPosts(config: BloggerConfig, language = 'en') {
+export function listBlogPosts(config: BloggerConfig, language = 'en-US') {
   return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts?limit=20&language=${language}`)
 }
 
-export function getBlogPost(config: BloggerConfig, slug: string, language = 'en') {
+export function getBlogPost(config: BloggerConfig, slug: string, language = 'en-US') {
   return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts/${slug}?language=${language}`)
 }
 ```

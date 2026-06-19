@@ -27,9 +27,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { usePost } from "@/hooks/use-blogger-queries"
 import { api } from "@/lib/api"
-import { blogLanguages } from "@/lib/languages"
+import { firstSiteLanguage, siteLanguageOptions } from "@/lib/languages"
 import { slugify } from "@/lib/utils"
-import type { Category, LanguageCode, Post, PostPayload, Site } from "@/types"
+import type { Category, Post, PostPayload, Site } from "@/types"
 
 const NONE_VALUE = "__none__"
 
@@ -48,19 +48,6 @@ const postSchema = z.object({
 
 type PostFormValues = z.infer<typeof postSchema>
 
-const emptyPostForm: PostFormValues = {
-  title: "",
-  slug: "",
-  language: "en",
-  markdownContent: "",
-  categoryId: NONE_VALUE,
-  excerpt: "",
-  coverImageUrl: "",
-  metaTitle: "",
-  metaDescription: "",
-  canonicalUrl: "",
-}
-
 export function PostEditorPage({
   token,
   site,
@@ -77,15 +64,17 @@ export function PostEditorPage({
   const queryClient = useQueryClient()
   const postQuery = usePost(token, site?.id ?? null, postId ?? null)
   const editing = postQuery.data ?? null
+  const defaultLanguage = firstSiteLanguage(site)
   const form = useForm<PostFormValues>({
     resolver: zodResolver(postSchema),
-    defaultValues: emptyPostForm,
+    defaultValues: emptyPostForm(defaultLanguage),
   })
   const coverImageUrl = useWatch({ control: form.control, name: "coverImageUrl" })
+  const languageOptions = siteLanguageOptions(site)
 
   useEffect(() => {
-    form.reset(editing ? formFromPost(editing) : emptyPostForm)
-  }, [editing, form])
+    form.reset(editing ? formFromPost(editing) : emptyPostForm(defaultLanguage))
+  }, [defaultLanguage, editing, form])
 
   const saveMutation = useMutation({
     mutationFn: (values: PostFormValues) => {
@@ -176,7 +165,7 @@ export function PostEditorPage({
                 control={form.control}
                 name="language"
                 render={({ field }) => (
-                  <SimpleSelect value={field.value} onValueChange={field.onChange} options={blogLanguages} />
+                  <SimpleSelect value={field.value} onValueChange={field.onChange} options={languageOptions} />
                 )}
               />
             </Field>
@@ -284,11 +273,26 @@ function formFromPost(post: Post): PostFormValues {
   }
 }
 
+function emptyPostForm(language: string): PostFormValues {
+  return {
+    title: "",
+    slug: "",
+    language,
+    markdownContent: "",
+    categoryId: NONE_VALUE,
+    excerpt: "",
+    coverImageUrl: "",
+    metaTitle: "",
+    metaDescription: "",
+    canonicalUrl: "",
+  }
+}
+
 function normalizePostPayload(values: PostFormValues): PostPayload {
   return {
     title: values.title,
     slug: values.slug,
-    language: values.language as LanguageCode,
+    language: values.language,
     markdown_content: values.markdownContent,
     excerpt: values.excerpt || null,
     cover_image_url: values.coverImageUrl || null,

@@ -8,7 +8,7 @@ from app import models, schemas
 from app.dependencies import require_user
 from app.db import get_db
 from app.markdown_render import render_markdown
-from app.routers.sites import owned_site_or_404
+from app.routers.sites import language_keys, owned_site_or_404
 
 router = APIRouter(prefix="/api/sites/{site_id}/posts", tags=["posts"])
 
@@ -40,6 +40,13 @@ def assert_category_belongs_to_site(db: Session, site_id: str, category_id: str 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category")
 
 
+def assert_language_belongs_to_site(site: models.Site, language: str | None) -> None:
+    if language is None:
+        return
+    if language not in language_keys(site):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid language for site")
+
+
 def sync_publish_state(post: models.Post, status_value: str | None) -> None:
     if status_value == "published" and post.published_at is None:
         post.published_at = datetime.now(timezone.utc)
@@ -52,14 +59,15 @@ def list_posts(
     site_id: str,
     status_filter: schemas.Status | None = Query(default=None, alias="status"),
     category_id: str | None = None,
-    language: schemas.LanguageCode | None = None,
+    language: str | None = Query(default=None, min_length=1, max_length=64, pattern=schemas.LANGUAGE_KEY_PATTERN),
     q: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: models.User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> schemas.PostListResponse:
-    owned_site_or_404(db, user.id, site_id)
+    site = owned_site_or_404(db, user.id, site_id)
+    assert_language_belongs_to_site(site, language)
     filters = [models.Post.site_id == site_id]
     if status_filter:
         filters.append(models.Post.status == status_filter)
@@ -90,7 +98,8 @@ def create_post(
     user: models.User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> models.Post:
-    owned_site_or_404(db, user.id, site_id)
+    site = owned_site_or_404(db, user.id, site_id)
+    assert_language_belongs_to_site(site, payload.language)
     assert_post_slug_available(db, site_id, payload.slug)
     assert_category_belongs_to_site(db, site_id, payload.category_id)
     data = payload.model_dump()
@@ -125,13 +134,15 @@ def update_post(
     user: models.User = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> models.Post:
-    owned_site_or_404(db, user.id, site_id)
+    site = owned_site_or_404(db, user.id, site_id)
     post = owned_post_or_404(db, site_id, post_id)
     data = payload.model_dump(exclude_unset=True)
     if "slug" in data:
         assert_post_slug_available(db, site_id, data["slug"], current_id=post.id)
     if "category_id" in data:
         assert_category_belongs_to_site(db, site_id, data["category_id"])
+    if "language" in data:
+        assert_language_belongs_to_site(site, data["language"])
     if "markdown_content" in data:
         post.html_content = render_markdown(data["markdown_content"] or "")
     for field, value in data.items():

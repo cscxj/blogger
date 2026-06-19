@@ -46,6 +46,20 @@ def test_blog_lifecycle_with_access_key() -> None:
     )
     assert site_response.status_code == 201, site_response.text
     site_id = site_response.json()["id"]
+    assert site_response.json()["languages"] == [{"key": "en", "label": "English"}]
+
+    language_update = client.patch(
+        f"/api/sites/{site_id}",
+        json={
+            "languages": [
+                {"key": "en", "label": "English"},
+                {"key": "zh-CN", "label": "中文"},
+            ]
+        },
+        headers=key_headers,
+    )
+    assert language_update.status_code == 200, language_update.text
+    assert language_update.json()["languages"][1]["key"] == "zh-CN"
 
     category_response = client.post(
         f"/api/sites/{site_id}/categories",
@@ -77,6 +91,38 @@ def test_blog_lifecycle_with_access_key() -> None:
     assert "<h1" in post["html_content"]
     assert "<script>" not in post["html_content"]
     post_id = post["id"]
+
+    custom_language_post = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "Chinese Post",
+            "slug": "chinese-post",
+            "language": "zh-CN",
+            "markdown_content": "# 你好",
+        },
+        headers=key_headers,
+    )
+    assert custom_language_post.status_code == 201, custom_language_post.text
+    assert custom_language_post.json()["language"] == "zh-CN"
+
+    invalid_language_post = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "French Post",
+            "slug": "french-post",
+            "language": "fr",
+            "markdown_content": "# Bonjour",
+        },
+        headers=key_headers,
+    )
+    assert invalid_language_post.status_code == 400, invalid_language_post.text
+
+    remove_used_language = client.patch(
+        f"/api/sites/{site_id}",
+        json={"languages": [{"key": "zh-CN", "label": "中文"}]},
+        headers=key_headers,
+    )
+    assert remove_used_language.status_code == 400, remove_used_language.text
 
     status_rejected = client.patch(
         f"/api/sites/{site_id}/posts/{post_id}",

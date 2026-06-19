@@ -36,9 +36,15 @@ export type Site = {
   slug: string
   base_url: string | null
   icon_url: string | null
+  languages: SiteLanguage[]
   description: string | null
   created_at: string
   updated_at: string
+}
+
+export type SiteLanguage = {
+  key: string
+  label: string
 }
 
 export type Category = {
@@ -52,23 +58,6 @@ export type Category = {
 }
 
 export type PostStatus = 'draft' | 'published'
-export type LanguageCode =
-  | 'en'
-  | 'zh'
-  | 'es'
-  | 'fr'
-  | 'de'
-  | 'ja'
-  | 'ko'
-  | 'pt'
-  | 'it'
-  | 'nl'
-  | 'ru'
-  | 'ar'
-  | 'hi'
-  | 'id'
-  | 'vi'
-  | 'th'
 
 export type Author = {
   id: string
@@ -83,7 +72,7 @@ export type Post = {
   author_id: string
   title: string
   slug: string
-  language: LanguageCode
+  language: string
   status: PostStatus
   markdown_content: string
   html_content: string
@@ -103,7 +92,7 @@ export type Post = {
 export type PostPayload = {
   title: string
   slug: string
-  language: LanguageCode
+  language: string
   markdown_content: string
   excerpt?: string | null
   cover_image_url?: string | null
@@ -121,7 +110,7 @@ export type PostListResponse = {
 }
 
 export type PostListParams = {
-  language?: LanguageCode | ''
+  language?: string
   category_id?: string
   status?: PostStatus | ''
   q?: string

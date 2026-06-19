@@ -29,9 +29,9 @@ import {
 } from "@/components/ui/table"
 import { usePosts } from "@/hooks/use-blogger-queries"
 import { api } from "@/lib/api"
-import { blogLanguages } from "@/lib/languages"
+import { siteLanguageLabel, siteLanguageOptions } from "@/lib/languages"
 import { formatDate } from "@/lib/utils"
-import type { Category, LanguageCode, Post, PostStatus, Site } from "@/types"
+import type { Category, Post, PostStatus, Site } from "@/types"
 
 const PAGE_SIZE = 10
 const ALL_VALUE = "__all__"
@@ -48,21 +48,23 @@ export function PostsListPage({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [query, setQuery] = useState("")
-  const [language, setLanguage] = useState<LanguageCode | "">("")
+  const [language, setLanguage] = useState("")
   const [categoryId, setCategoryId] = useState("")
   const [status, setStatus] = useState<PostStatus | "">("")
   const [page, setPage] = useState(0)
+  const languageOptions = useMemo(() => siteLanguageOptions(site), [site])
+  const effectiveLanguage = languageOptions.some((option) => option.value === language) ? language : ""
 
   const params = useMemo(
     () => ({
       q: query || undefined,
-      language,
+      language: effectiveLanguage,
       category_id: categoryId,
       status,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
-    [categoryId, language, page, query, status]
+    [categoryId, effectiveLanguage, page, query, status]
   )
   const postsQuery = usePosts(token, site?.id ?? null, params)
   const pageData = postsQuery.data
@@ -133,9 +135,9 @@ export function PostsListPage({
             />
           </div>
           <SimpleSelect
-            value={language || ALL_VALUE}
-            onValueChange={(value) => resetPage(() => setLanguage(value === ALL_VALUE ? "" : (value as LanguageCode)))}
-            options={[{ value: ALL_VALUE, label: t("common.allLanguages") }, ...blogLanguages]}
+            value={effectiveLanguage || ALL_VALUE}
+            onValueChange={(value) => resetPage(() => setLanguage(value === ALL_VALUE ? "" : value))}
+            options={[{ value: ALL_VALUE, label: t("common.allLanguages") }, ...languageOptions]}
           />
           <SimpleSelect
             value={categoryId || ALL_VALUE}
@@ -172,7 +174,7 @@ export function PostsListPage({
                     <div className="font-medium">{post.title}</div>
                     <div className="text-xs text-muted-foreground">{t("posts.path", { slug: post.slug })}</div>
                   </TableCell>
-                  <TableCell>{post.language}</TableCell>
+                  <TableCell>{siteLanguageLabel(site, post.language)}</TableCell>
                   <TableCell>{post.category?.name ?? t("common.none")}</TableCell>
                   <TableCell>
                     <Badge variant={post.status === "published" ? "default" : "outline"}>

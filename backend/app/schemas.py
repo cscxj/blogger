@@ -3,47 +3,35 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 Status = Literal["draft", "published"]
-LanguageCode = Literal[
-    "en",
-    "zh",
-    "es",
-    "fr",
-    "de",
-    "ja",
-    "ko",
-    "pt",
-    "it",
-    "nl",
-    "ru",
-    "ar",
-    "hi",
-    "id",
-    "vi",
-    "th",
-]
 UserRole = Literal["super_admin", "operator"]
 
-LANGUAGE_OPTIONS: tuple[LanguageCode, ...] = (
-    "en",
-    "zh",
-    "es",
-    "fr",
-    "de",
-    "ja",
-    "ko",
-    "pt",
-    "it",
-    "nl",
-    "ru",
-    "ar",
-    "hi",
-    "id",
-    "vi",
-    "th",
-)
+LANGUAGE_KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+
+
+class SiteLanguage(BaseModel):
+    key: str = Field(min_length=1, max_length=64, pattern=LANGUAGE_KEY_PATTERN)
+    label: str = Field(min_length=1, max_length=120)
+
+    @field_validator("key", "label", mode="before")
+    @classmethod
+    def strip_value(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        return value.strip()
+
+
+def default_site_languages() -> list[SiteLanguage]:
+    return [SiteLanguage(key="en", label="English")]
+
+
+def validate_site_languages(languages: list[SiteLanguage]) -> list[SiteLanguage]:
+    keys = [language.key for language in languages]
+    if len(keys) != len(set(keys)):
+        raise ValueError("Language keys must be unique")
+    return languages
 
 
 class UserBase(BaseModel):
@@ -112,7 +100,13 @@ class SiteBase(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     base_url: str | None = Field(default=None, max_length=1000)
+    languages: list[SiteLanguage] = Field(default_factory=default_site_languages, min_length=1, max_length=50)
     description: str | None = None
+
+    @field_validator("languages")
+    @classmethod
+    def unique_language_keys(cls, languages: list[SiteLanguage]) -> list[SiteLanguage]:
+        return validate_site_languages(languages)
 
 
 class SiteCreate(SiteBase):
@@ -123,7 +117,15 @@ class SiteUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     slug: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     base_url: str | None = Field(default=None, max_length=1000)
+    languages: list[SiteLanguage] | None = Field(default=None, min_length=1, max_length=50)
     description: str | None = None
+
+    @field_validator("languages")
+    @classmethod
+    def unique_language_keys(cls, languages: list[SiteLanguage] | None) -> list[SiteLanguage] | None:
+        if languages is None:
+            return languages
+        return validate_site_languages(languages)
 
 
 class SiteRead(SiteBase):
@@ -163,7 +165,7 @@ class CategoryRead(CategoryBase):
 class PostBase(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     slug: str = Field(min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    language: LanguageCode = "en"
+    language: str = Field(default="en", min_length=1, max_length=64, pattern=LANGUAGE_KEY_PATTERN)
     markdown_content: str = Field(min_length=1)
     excerpt: str | None = None
     cover_image_url: str | None = Field(default=None, max_length=1000)
@@ -182,7 +184,7 @@ class PostUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=240)
     slug: str | None = Field(default=None, min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    language: LanguageCode | None = None
+    language: str | None = Field(default=None, min_length=1, max_length=64, pattern=LANGUAGE_KEY_PATTERN)
     markdown_content: str | None = Field(default=None, min_length=1)
     excerpt: str | None = None
     cover_image_url: str | None = Field(default=None, max_length=1000)
@@ -229,7 +231,7 @@ class IntegrationPost(BaseModel):
     site_slug: str
     title: str
     slug: str
-    language: LanguageCode
+    language: str
     path: str
     html_content: str
     excerpt: str | None

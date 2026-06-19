@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import inspect, text
 
 from app.db import engine
+
+DEFAULT_LANGUAGES = [{"key": "en", "label": "English"}]
+DEFAULT_LANGUAGES_JSON = json.dumps(DEFAULT_LANGUAGES)
 
 
 def _column_names(table: str) -> set[str]:
@@ -25,13 +30,31 @@ def ensure_schema() -> None:
     sites = _column_names("sites")
     if sites and "icon_url" not in sites:
         _add_column("sites", "icon_url VARCHAR(1000)")
+    if sites and "languages" not in sites:
+        if engine.dialect.name == "postgresql":
+            _add_column("sites", f"languages JSONB NOT NULL DEFAULT '{DEFAULT_LANGUAGES_JSON}'::jsonb")
+        else:
+            _add_column("sites", f"languages JSON NOT NULL DEFAULT '{DEFAULT_LANGUAGES_JSON}'")
 
     posts = _column_names("posts")
     if posts and "language" not in posts:
-        _add_column("posts", "language VARCHAR(16) NOT NULL DEFAULT 'en'")
+        _add_column("posts", "language VARCHAR(64) NOT NULL DEFAULT 'en'")
 
     with engine.begin() as connection:
+        if engine.dialect.name == "postgresql" and posts and "language" in posts:
+            connection.execute(text("ALTER TABLE posts ALTER COLUMN language TYPE VARCHAR(64)"))
         connection.execute(text("UPDATE users SET role = 'operator' WHERE role IS NULL"))
+        if sites:
+            if engine.dialect.name == "postgresql":
+                connection.execute(
+                    text("UPDATE sites SET languages = CAST(:languages AS jsonb) WHERE languages IS NULL"),
+                    {"languages": DEFAULT_LANGUAGES_JSON},
+                )
+            else:
+                connection.execute(
+                    text("UPDATE sites SET languages = :languages WHERE languages IS NULL"),
+                    {"languages": DEFAULT_LANGUAGES_JSON},
+                )
         connection.execute(text("UPDATE posts SET language = 'en' WHERE language IS NULL"))
         super_admin_id = connection.execute(
             text("SELECT id FROM users WHERE role = 'super_admin' LIMIT 1")

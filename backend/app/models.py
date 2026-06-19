@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -62,6 +62,11 @@ class Site(TimestampMixin, Base):
     slug: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(1000))
     icon_url: Mapped[str | None] = mapped_column(String(1000))
+    languages: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON,
+        default=lambda: [{"key": "en", "label": "English"}],
+        nullable=False,
+    )
     description: Mapped[str | None] = mapped_column(Text)
 
     owner: Mapped[User] = relationship(back_populates="sites")
@@ -93,7 +98,7 @@ class Post(TimestampMixin, Base):
     author_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(240), nullable=False)
     slug: Mapped[str] = mapped_column(String(160), nullable=False)
-    language: Mapped[str] = mapped_column(String(16), default="en", index=True, nullable=False)
+    language: Mapped[str] = mapped_column(String(64), default="en", index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     markdown_content: Mapped[str] = mapped_column(Text, default="")
     html_content: Mapped[str] = mapped_column(Text, default="")

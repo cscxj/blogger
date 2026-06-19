@@ -24,6 +24,29 @@ def assert_site_slug_available(db: Session, user_id: str, slug: str, current_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Site slug already exists")
 
 
+def language_keys(site: models.Site) -> set[str]:
+    return {
+        language.get("key", "")
+        for language in (site.languages or [])
+        if isinstance(language, dict) and language.get("key")
+    }
+
+
+def assert_languages_can_replace(db: Session, site: models.Site, languages: list[schemas.SiteLanguage]) -> None:
+    next_keys = {language.key for language in languages}
+    used_keys = {
+        key
+        for key in db.execute(select(models.Post.language).where(models.Post.site_id == site.id).distinct()).scalars().all()
+        if key
+    }
+    missing_keys = sorted(used_keys - next_keys)
+    if missing_keys:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot remove languages used by posts: {', '.join(missing_keys)}",
+        )
+
+
 @router.get("", response_model=list[schemas.SiteRead])
 def list_sites(
     user: models.User = Depends(require_user),
@@ -66,6 +89,8 @@ async def update_site(
     data = payload.model_dump(exclude_unset=True)
     if "slug" in data:
         assert_site_slug_available(db, user.id, data["slug"], current_id=site.id)
+    if "languages" in data:
+        assert_languages_can_replace(db, site, payload.languages or [])
     for field, value in data.items():
         setattr(site, field, value)
     if "base_url" in data:

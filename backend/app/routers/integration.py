@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import models, schemas
 from app.dependencies import Principal, get_current_principal
 from app.db import get_db
+from app.routers.sites import language_keys
 
 router = APIRouter(prefix="/api/integration", tags=["integration"])
 
@@ -39,6 +40,13 @@ def integration_post(site: models.Site, post: models.Post) -> schemas.Integratio
     )
 
 
+def assert_language_belongs_to_site(site: models.Site, language: str | None) -> None:
+    if language is None:
+        return
+    if language not in language_keys(site):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid language for site")
+
+
 @router.get("/sites", response_model=list[schemas.SiteRead])
 def list_integration_sites(
     principal: Principal = Depends(get_current_principal),
@@ -69,13 +77,14 @@ def list_integration_categories(
 def list_integration_posts(
     site_slug: str,
     category_slug: str | None = None,
-    language: schemas.LanguageCode | None = None,
+    language: str | None = Query(default=None, min_length=1, max_length=64, pattern=schemas.LANGUAGE_KEY_PATTERN),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> list[schemas.IntegrationPost]:
     site = owned_site_by_slug_or_404(db, principal.user.id, site_slug)
+    assert_language_belongs_to_site(site, language)
     stmt = (
         select(models.Post)
         .options(selectinload(models.Post.author), selectinload(models.Post.category))
@@ -96,11 +105,12 @@ def list_integration_posts(
 def get_integration_post(
     site_slug: str,
     post_slug: str,
-    language: schemas.LanguageCode | None = None,
+    language: str | None = Query(default=None, min_length=1, max_length=64, pattern=schemas.LANGUAGE_KEY_PATTERN),
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> schemas.IntegrationPost:
     site = owned_site_by_slug_or_404(db, principal.user.id, site_slug)
+    assert_language_belongs_to_site(site, language)
     filters = [
         models.Post.site_id == site.id,
         models.Post.slug == post_slug,

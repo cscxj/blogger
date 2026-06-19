@@ -1,6 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Check, Loader2, Plus, Trash2 } from "lucide-react"
-import { useForm } from "react-hook-form"
+import { useEffect } from "react"
+import { useFieldArray, useForm } from "react-hook-form"
+import type { UseFormRegisterReturn } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -22,16 +24,43 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { queryKeys } from "@/hooks/use-blogger-queries"
 import { api } from "@/lib/api"
+import { defaultSiteLanguages } from "@/lib/languages"
 import { slugify } from "@/lib/utils"
 import type { Site } from "@/types"
+
+const languageSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/),
+  label: z.string().trim().min(1).max(120),
+})
+
+const languagesSchema = z.array(languageSchema).min(1).max(50).superRefine((languages, context) => {
+  const keys = new Set<string>()
+  languages.forEach((language, index) => {
+    if (keys.has(language.key)) {
+      context.addIssue({
+        code: "custom",
+        message: "Language keys must be unique",
+        path: [index, "key"],
+      })
+    }
+    keys.add(language.key)
+  })
+})
 
 const siteSchema = z.object({
   name: z.string().min(1),
   baseUrl: z.string().optional(),
   description: z.string().optional(),
+  languages: languagesSchema,
 })
 
 type SiteFormValues = z.infer<typeof siteSchema>
+type LanguagesFormValues = Pick<SiteFormValues, "languages">
 
 export function SitesView({
   token,
@@ -52,8 +81,10 @@ export function SitesView({
       name: "",
       baseUrl: "",
       description: "",
+      languages: defaultSiteLanguages,
     },
   })
+  const createLanguages = useFieldArray({ control: form.control, name: "languages" })
 
   const createMutation = useMutation({
     mutationFn: (values: SiteFormValues) =>
@@ -62,6 +93,7 @@ export function SitesView({
         slug: slugify(values.name),
         base_url: values.baseUrl || null,
         description: values.description || null,
+        languages: values.languages,
       }),
     onSuccess: async (site) => {
       form.reset()
@@ -118,6 +150,14 @@ export function SitesView({
             <Field label={t("sites.description")}>
               <Textarea {...form.register("description")} />
             </Field>
+            <LanguageFields
+              fields={createLanguages.fields}
+              registerKey={(index) => form.register(`languages.${index}.key`)}
+              registerLabel={(index) => form.register(`languages.${index}.label`)}
+              onAdd={() => createLanguages.append({ key: "", label: "" })}
+              onRemove={createLanguages.remove}
+              removeDisabled={createLanguages.fields.length <= 1}
+            />
             <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? (
                 <Loader2 className="animate-spin" />
@@ -169,17 +209,104 @@ export function SitesView({
                   {site.base_url}
                 </div>
               ) : null}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onSelectSite(site.id)}
-              >
+              <div className="flex flex-wrap gap-2">
+                {site.languages.map((language) => (
+                  <Badge key={language.key} variant="secondary">
+                    {language.label} ({language.key})
+                  </Badge>
+                ))}
+              </div>
+              <SiteLanguagesEditor token={token} site={site} />
+              <Button variant="outline" size="sm" onClick={() => onSelectSite(site.id)}>
                 {t("common.select")}
               </Button>
             </CardContent>
           </Card>
         ))}
       </div>
+    </div>
+  )
+}
+
+function SiteLanguagesEditor({ token, site }: { token: string; site: Site }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const form = useForm<LanguagesFormValues>({
+    resolver: zodResolver(z.object({ languages: languagesSchema })),
+    defaultValues: { languages: site.languages.length ? site.languages : defaultSiteLanguages },
+  })
+  const languages = useFieldArray({ control: form.control, name: "languages" })
+  const updateMutation = useMutation({
+    mutationFn: (values: LanguagesFormValues) => api.updateSite(token, site.id, { languages: values.languages }),
+    onSuccess: async () => {
+      toast.success(t("sites.languagesSaved"))
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sites(token) })
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+  })
+
+  useEffect(() => {
+    form.reset({ languages: site.languages.length ? site.languages : defaultSiteLanguages })
+  }, [form, site.languages])
+
+  return (
+    <form className="space-y-3 rounded-lg border p-3" onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}>
+      <LanguageFields
+        fields={languages.fields}
+        registerKey={(index) => form.register(`languages.${index}.key`)}
+        registerLabel={(index) => form.register(`languages.${index}.label`)}
+        onAdd={() => languages.append({ key: "", label: "" })}
+        onRemove={languages.remove}
+        removeDisabled={languages.fields.length <= 1}
+      />
+      <Button type="submit" size="sm" disabled={updateMutation.isPending}>
+        {updateMutation.isPending ? <Loader2 className="animate-spin" /> : <Check />}
+        {t("sites.saveLanguages")}
+      </Button>
+    </form>
+  )
+}
+
+function LanguageFields({
+  fields,
+  registerKey,
+  registerLabel,
+  onAdd,
+  onRemove,
+  removeDisabled,
+}: {
+  fields: Array<{ id: string }>
+  registerKey: (index: number) => UseFormRegisterReturn
+  registerLabel: (index: number) => UseFormRegisterReturn
+  onAdd: () => void
+  onRemove: (index: number) => void
+  removeDisabled: boolean
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium">{t("sites.languages")}</div>
+      {fields.map((field, index) => (
+        <div key={field.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <Input placeholder={t("sites.languageKey")} {...registerKey(index)} />
+          <Input placeholder={t("sites.languageLabel")} {...registerLabel(index)} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            disabled={removeDisabled}
+            onClick={() => onRemove(index)}
+            aria-label={t("common.delete")}
+          >
+            <Trash2 />
+          </Button>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+        <Plus />
+        {t("sites.addLanguage")}
+      </Button>
     </div>
   )
 }

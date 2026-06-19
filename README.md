@@ -75,13 +75,14 @@ Authorization: Bearer blog_sk_...
 
 Product websites should use the skill in `skills/blogger-integration`. The stable read path is:
 
-- `GET /api/integration/sites/{site_slug}/posts?language=en`
-- `GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en`
+- `GET /api/integration/sites/{site_slug}/posts?language=en-US`
+- `GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en-US`
 - `GET /api/integration/sites/{site_slug}/categories`
 
 These endpoints return published content only and require an AccessKey.
 
-Posts use standard short language codes such as `en`, `zh`, `ja`, and `de`.
+Post language uses the site's configured language key. Each site stores its own
+`languages` list, for example `[{ "key": "en-US", "label": "English" }]`.
 Create/update post calls always save drafts; use publish/unpublish endpoints or CLI commands to change status.
 
 ## Google Cloud

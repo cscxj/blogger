@@ -7,6 +7,7 @@ import type {
   PostListResponse,
   PostPayload,
   Site,
+  SiteLanguage,
   TokenResponse,
   User,
 } from '../types'
@@ -15,6 +16,14 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 type RequestOptions = RequestInit & {
   token?: string | null
+}
+
+type SitePayload = {
+  name: string
+  slug: string
+  base_url?: string | null
+  description?: string | null
+  languages?: SiteLanguage[]
 }
 
 export class ApiError extends Error {
@@ -118,13 +127,13 @@ export const api = {
       token,
     }),
   listSites: (token: string) => request<Site[]>('/api/sites', { token }),
-  createSite: (token: string, payload: Omit<Site, 'id' | 'created_at' | 'updated_at' | 'icon_url'>) =>
+  createSite: (token: string, payload: SitePayload) =>
     request<Site>('/api/sites', {
       method: 'POST',
       token,
       body: JSON.stringify(payload),
     }),
-  updateSite: (token: string, id: string, payload: Partial<Omit<Site, 'id' | 'created_at' | 'updated_at' | 'icon_url'>>) =>
+  updateSite: (token: string, id: string, payload: Partial<SitePayload>) =>
     request<Site>(`/api/sites/${id}`, {
       method: 'PATCH',
       token,

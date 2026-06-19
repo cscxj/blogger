@@ -17,6 +17,7 @@ import { ProfileView } from "@/features/profile/profile-view"
 import { SitesView } from "@/features/sites/sites-view"
 import { UsersView } from "@/features/users/users-view"
 import {
+  queryKeys,
   useAccessKeys,
   useCategories,
   useMe,
@@ -34,6 +35,7 @@ export function AppShell() {
   const location = useLocation()
   const { token, user, setUser, signOut } = useAuth()
   const [selectedSiteId, setSelectedSiteId] = useState("")
+  const [isSwitchingSite, setIsSwitchingSite] = useState(false)
 
   const meQuery = useMe(token)
   const sitesQuery = useSites(token)
@@ -42,7 +44,12 @@ export function AppShell() {
   const isSuperAdmin = activeUser?.role === "super_admin"
   const usersQuery = useUsers(token, isSuperAdmin)
   const sites = useMemo(() => sitesQuery.data ?? [], [sitesQuery.data])
-  const effectiveSiteId = selectedSiteId || sites[0]?.id || ""
+  const effectiveSiteId = useMemo(() => {
+    if (selectedSiteId && sites.some((site) => site.id === selectedSiteId)) {
+      return selectedSiteId
+    }
+    return sites[0]?.id || ""
+  }, [selectedSiteId, sites])
   const selectedSite = useMemo(
     () => sites.find((site) => site.id === effectiveSiteId) ?? null,
     [effectiveSiteId, sites]
@@ -98,6 +105,36 @@ export function AppShell() {
     await queryClient.invalidateQueries()
   }
 
+  async function refreshSite(siteId: string) {
+    if (!token) {
+      return
+    }
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.categories(token, siteId) }),
+      queryClient.invalidateQueries({ queryKey: ["posts", token, siteId] }),
+      queryClient.invalidateQueries({ queryKey: ["post", token, siteId] }),
+    ])
+  }
+
+  async function handleSelectSite(siteId: string) {
+    if (!siteId || siteId === effectiveSiteId) {
+      return
+    }
+
+    setSelectedSiteId(siteId)
+    if (/^\/posts\/[^/]+\/edit$/.test(location.pathname)) {
+      navigate("/posts")
+    }
+
+    setIsSwitchingSite(true)
+    try {
+      await refreshSite(siteId)
+    } finally {
+      setIsSwitchingSite(false)
+    }
+  }
+
   return (
     <SidebarProvider>
       <AdminSidebar isSuperAdmin={isSuperAdmin} pathname={location.pathname} />
@@ -106,8 +143,8 @@ export function AppShell() {
           title={getAdminPageTitle(location.pathname, t)}
           selectedSite={selectedSite}
           sites={sites}
-          isRefreshing={sitesQuery.isFetching || categoriesQuery.isFetching}
-          onSelectSite={setSelectedSiteId}
+          isRefreshing={isSwitchingSite || sitesQuery.isFetching || categoriesQuery.isFetching}
+          onSelectSite={(siteId) => void handleSelectSite(siteId)}
           onRefresh={() => void refreshAll()}
           user={activeUser}
           isSuperAdmin={isSuperAdmin}
@@ -121,7 +158,12 @@ export function AppShell() {
             <Route
               path="/posts"
               element={
-                <PostsListPage token={token} site={selectedSite} categories={categoriesQuery.data ?? []} />
+                <PostsListPage
+                  key={selectedSite?.id ?? "none"}
+                  token={token}
+                  site={selectedSite}
+                  categories={categoriesQuery.data ?? []}
+                />
               }
             />
             <Route
@@ -160,7 +202,7 @@ export function AppShell() {
                     token={token}
                     sites={sites}
                     selectedSiteId={selectedSite?.id ?? ""}
-                    onSelectSite={setSelectedSiteId}
+                    onSelectSite={(siteId) => void handleSelectSite(siteId)}
                   />
                 ) : (
                   <Navigate to="/posts" replace />

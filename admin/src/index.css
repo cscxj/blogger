@@ -6,6 +6,10 @@
   :root {
     --background: 210 20% 98%;
     --foreground: 222 28% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 28% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 28% 11%;
     --muted: 210 18% 93%;
     --muted-foreground: 215 12% 43%;
     --accent: 173 45% 92%;
@@ -19,6 +23,7 @@
     --border: 214 15% 86%;
     --input: 214 15% 86%;
     --ring: 187 70% 33%;
+    --radius: 8px;
   }
 
   * {

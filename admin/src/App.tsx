@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent, HTMLAttributes, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BookOpen,
@@ -18,14 +18,27 @@ import {
   UserCircle,
 } from 'lucide-react'
 
-import { api, API_URL } from './lib/api'
-import { formatDate, slugify } from './lib/utils'
-import type { AccessKey, AccessKeyCreated, Category, Post, PostPayload, Site, User } from './types'
-import { Badge, Button, Input, Label, Panel, Select, Textarea } from './components/ui'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { api, API_URL } from '@/lib/api'
+import { cn, formatDate, slugify } from '@/lib/utils'
+import type { AccessKey, AccessKeyCreated, Category, Post, PostPayload, Site, User } from '@/types'
 
 type View = 'posts' | 'categories' | 'sites' | 'keys' | 'profile'
 
 const TOKEN_KEY = 'blogger-admin-token'
+const NONE_VALUE = '__none__'
 
 const emptyPostForm: PostPayload = {
   title: '',
@@ -172,19 +185,15 @@ function App() {
         <header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur">
           <div className="flex min-h-16 flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between lg:px-6">
             <div className="flex items-center gap-3">
-              <Select
+              <SimpleSelect
                 aria-label="Current site"
                 value={selectedSite?.id ?? ''}
-                onChange={(event) => setSelectedSiteId(event.target.value)}
+                onValueChange={setSelectedSiteId}
                 className="w-56"
-              >
-                {sites.length === 0 ? <option value="">No site</option> : null}
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </Select>
+                placeholder="No site"
+                disabled={sites.length === 0}
+                options={sites.map((site) => ({ value: site.id, label: site.name }))}
+              />
               <Badge variant="outline">{API_URL.replace(/^https?:\/\//, '')}</Badge>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -565,23 +574,24 @@ function PostsView({
               <Input value={form.slug} onChange={(event) => setForm({ ...form, slug: slugify(event.target.value) })} required />
             </Field>
             <Field label="Status">
-              <Select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as Post['status'] })}>
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
-              </Select>
+              <SimpleSelect
+                value={form.status}
+                onValueChange={(value) => setForm({ ...form, status: value as Post['status'] })}
+                options={[
+                  { value: 'draft', label: 'Draft' },
+                  { value: 'published', label: 'Published' },
+                ]}
+              />
             </Field>
             <Field label="Category">
-              <Select
-                value={form.category_id || ''}
-                onChange={(event) => setForm({ ...form, category_id: event.target.value || null })}
-              >
-                <option value="">None</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
+              <SimpleSelect
+                value={form.category_id || NONE_VALUE}
+                onValueChange={(value) => setForm({ ...form, category_id: value === NONE_VALUE ? null : value })}
+                options={[
+                  { value: NONE_VALUE, label: 'None' },
+                  ...categories.map((category) => ({ value: category.id, label: category.name })),
+                ]}
+              />
             </Field>
           </div>
           <Field label="Markdown">
@@ -970,6 +980,43 @@ function ProfileView({
         </Button>
       </form>
     </Panel>
+  )
+}
+
+function Panel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <Card className={cn('bg-white p-4 shadow-sm', className)} {...props} />
+}
+
+function SimpleSelect({
+  value,
+  onValueChange,
+  options,
+  placeholder = 'Select',
+  className,
+  disabled,
+  'aria-label': ariaLabel,
+}: {
+  value: string
+  onValueChange: (value: string) => void
+  options: Array<{ value: string; label: string; disabled?: boolean }>
+  placeholder?: string
+  className?: string
+  disabled?: boolean
+  'aria-label'?: string
+}) {
+  return (
+    <Select value={value || undefined} onValueChange={onValueChange} disabled={disabled || options.length === 0}>
+      <SelectTrigger className={cn('w-full', className)} aria-label={ariaLabel}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

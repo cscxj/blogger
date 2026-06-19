@@ -92,6 +92,7 @@ The deploy scripts assume:
 - Cloud SQL Postgres for database storage.
 - Secret Manager for `DATABASE_URL`, `SECRET_KEY`, and `ACCESS_KEY_PEPPER`.
 - Cloud Storage for uploaded avatars and cover images.
+- Public upload URLs are served through the API asset proxy by default.
 - Artifact Registry for container images.
 
 Deploy from an authenticated `gcloud` shell:

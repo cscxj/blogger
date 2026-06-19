@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models
 from app.core.config import settings
 from app.db import Base, engine
-from app.routers import access_keys, auth, categories, integration, meta, posts, sites, uploads, users
+from app.routers import access_keys, assets, auth, categories, integration, meta, posts, sites, uploads, users
 from app.schema_guard import ensure_schema
 
 app = FastAPI(title="Blogger API", version="0.1.0")
@@ -26,6 +26,7 @@ app.include_router(categories.router)
 app.include_router(posts.router)
 app.include_router(integration.router)
 app.include_router(uploads.router)
+app.include_router(assets.router)
 
 
 @app.on_event("startup")

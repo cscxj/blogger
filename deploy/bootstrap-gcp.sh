@@ -52,9 +52,11 @@ if ! gcloud storage buckets describe "gs://${ASSET_BUCKET}" >/dev/null 2>&1; the
     --uniform-bucket-level-access
 fi
 
-gcloud storage buckets add-iam-policy-binding "gs://${ASSET_BUCKET}" \
+if ! gcloud storage buckets add-iam-policy-binding "gs://${ASSET_BUCKET}" \
   --member=allUsers \
-  --role=roles/storage.objectViewer >/dev/null
+  --role=roles/storage.objectViewer >/dev/null; then
+  echo "Warning: could not make gs://${ASSET_BUCKET} public; uploads will be served through the API asset proxy." >&2
+fi
 
 DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-blogger-db-password}"
 SECRET_KEY_SECRET="${SECRET_KEY_SECRET:-blogger-secret-key}"

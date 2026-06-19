@@ -10,7 +10,7 @@ Use the `blogger` npm CLI for operations instead of calling HTTP endpoints by ha
 ## Quick Start
 
 1. Ensure the CLI is installed or runnable from the repo:
-   - Package command: `npx blogger-operator-cli --help`
+   - Package command: `npx @shulex/blogger-operator-cli --help`
    - Repo command: `cd cli && npm install && npm run build && node dist/index.js --help`
 2. Configure API and AccessKey:
    - `blogger config set --api-url <API_URL> --access-key <blog_sk_...>`

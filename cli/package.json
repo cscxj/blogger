@@ -1,10 +1,10 @@
 {
-  "name": "blogger-operator-cli",
+  "name": "@shulex/blogger-operator-cli",
   "version": "0.1.0",
   "description": "CLI for operating the shared Blogger API",
   "type": "module",
   "bin": {
-    "blogger": "./dist/index.js"
+    "blogger": "dist/index.js"
   },
   "files": [
     "dist"

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
@@ -47,33 +47,40 @@ def sync_publish_state(post: models.Post, status_value: str | None) -> None:
         post.published_at = None
 
 
-@router.get("", response_model=list[schemas.PostRead])
+@router.get("", response_model=schemas.PostListResponse)
 def list_posts(
     site_id: str,
     status_filter: schemas.Status | None = Query(default=None, alias="status"),
     category_id: str | None = None,
+    language: schemas.LanguageCode | None = None,
     q: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: models.User = Depends(require_user),
     db: Session = Depends(get_db),
-) -> list[models.Post]:
+) -> schemas.PostListResponse:
     owned_site_or_404(db, user.id, site_id)
+    filters = [models.Post.site_id == site_id]
+    if status_filter:
+        filters.append(models.Post.status == status_filter)
+    if category_id:
+        filters.append(models.Post.category_id == category_id)
+    if language:
+        filters.append(models.Post.language == language)
+    if q:
+        filters.append(models.Post.title.ilike(f"%{q}%"))
+
+    total = db.execute(select(func.count(models.Post.id)).where(*filters)).scalar_one()
     stmt = (
         select(models.Post)
         .options(selectinload(models.Post.author), selectinload(models.Post.category))
-        .where(models.Post.site_id == site_id)
+        .where(*filters)
         .order_by(models.Post.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
-    if status_filter:
-        stmt = stmt.where(models.Post.status == status_filter)
-    if category_id:
-        stmt = stmt.where(models.Post.category_id == category_id)
-    if q:
-        stmt = stmt.where(models.Post.title.ilike(f"%{q}%"))
-    return list(db.execute(stmt).scalars().all())
+    items = list(db.execute(stmt).scalars().all())
+    return schemas.PostListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("", response_model=schemas.PostRead, status_code=status.HTTP_201_CREATED)
@@ -90,10 +97,10 @@ def create_post(
     post = models.Post(
         site_id=site_id,
         author_id=user.id,
+        status="draft",
         html_content=render_markdown(payload.markdown_content),
         **data,
     )
-    sync_publish_state(post, payload.status)
     db.add(post)
     db.commit()
     return owned_post_or_404(db, site_id, post.id)
@@ -129,7 +136,6 @@ def update_post(
         post.html_content = render_markdown(data["markdown_content"] or "")
     for field, value in data.items():
         setattr(post, field, value)
-    sync_publish_state(post, data.get("status"))
     db.add(post)
     db.commit()
     return owned_post_or_404(db, site_id, post.id)

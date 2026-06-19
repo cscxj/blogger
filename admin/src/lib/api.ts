@@ -3,6 +3,8 @@ import type {
   AccessKeyCreated,
   Category,
   Post,
+  PostListParams,
+  PostListResponse,
   PostPayload,
   Site,
   TokenResponse,
@@ -29,7 +31,7 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body && !headers.has('Content-Type')) {
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
   if (options.token) {
@@ -57,6 +59,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T
 }
 
+function queryString(params: Record<string, string | number | undefined | null>) {
+  const search = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(key, String(value))
+    }
+  })
+  const value = search.toString()
+  return value ? `?${value}` : ''
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('/api/auth/login', {
@@ -75,6 +88,23 @@ export const api = {
       token,
       body: JSON.stringify(payload),
     }),
+  listUsers: (token: string) => request<User[]>('/api/users', { token }),
+  updateUser: (token: string, id: string, payload: Partial<Pick<User, 'nickname' | 'avatar_url' | 'role' | 'is_active'>>) =>
+    request<User>(`/api/users/${id}`, {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  uploadImage: (token: string, file: File, kind: string) => {
+    const form = new FormData()
+    form.set('kind', kind)
+    form.set('file', file)
+    return request<{ url: string }>('/api/uploads', {
+      method: 'POST',
+      token,
+      body: form,
+    })
+  },
   listAccessKeys: (token: string) => request<AccessKey[]>('/api/access-keys', { token }),
   createAccessKey: (token: string, name: string) =>
     request<AccessKeyCreated>('/api/access-keys', {
@@ -88,13 +118,13 @@ export const api = {
       token,
     }),
   listSites: (token: string) => request<Site[]>('/api/sites', { token }),
-  createSite: (token: string, payload: Omit<Site, 'id' | 'created_at' | 'updated_at'>) =>
+  createSite: (token: string, payload: Omit<Site, 'id' | 'created_at' | 'updated_at' | 'icon_url'>) =>
     request<Site>('/api/sites', {
       method: 'POST',
       token,
       body: JSON.stringify(payload),
     }),
-  updateSite: (token: string, id: string, payload: Partial<Omit<Site, 'id' | 'created_at' | 'updated_at'>>) =>
+  updateSite: (token: string, id: string, payload: Partial<Omit<Site, 'id' | 'created_at' | 'updated_at' | 'icon_url'>>) =>
     request<Site>(`/api/sites/${id}`, {
       method: 'PATCH',
       token,
@@ -129,13 +159,16 @@ export const api = {
       method: 'DELETE',
       token,
     }),
-  listPosts: (token: string, siteId: string) => request<Post[]>(`/api/sites/${siteId}/posts`, { token }),
+  listPosts: (token: string, siteId: string, params: PostListParams = {}) =>
+    request<PostListResponse>(`/api/sites/${siteId}/posts${queryString(params)}`, { token }),
   createPost: (token: string, siteId: string, payload: PostPayload) =>
     request<Post>(`/api/sites/${siteId}/posts`, {
       method: 'POST',
       token,
       body: JSON.stringify(payload),
     }),
+  getPost: (token: string, siteId: string, postId: string) =>
+    request<Post>(`/api/sites/${siteId}/posts/${postId}`, { token }),
   updatePost: (token: string, siteId: string, postId: string, payload: Partial<PostPayload>) =>
     request<Post>(`/api/sites/${siteId}/posts/${postId}`, {
       method: 'PATCH',

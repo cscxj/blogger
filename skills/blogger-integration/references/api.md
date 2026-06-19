@@ -53,10 +53,12 @@ Returns:
 ### List Published Posts
 
 ```http
-GET /api/integration/sites/{site_slug}/posts?limit=20&offset=0&category_slug=product
+GET /api/integration/sites/{site_slug}/posts?limit=20&offset=0&category_slug=product&language=en
 ```
 
-`category_slug` is optional.
+`category_slug` and `language` are optional. `language` uses standard short language codes:
+
+`en`, `zh`, `es`, `fr`, `de`, `ja`, `ko`, `pt`, `it`, `nl`, `ru`, `ar`, `hi`, `id`, `vi`, `th`.
 
 Returns:
 
@@ -67,6 +69,7 @@ Returns:
     "site_slug": "my-product-site",
     "title": "First post",
     "slug": "first-post",
+    "language": "en",
     "path": "/blog/first-post",
     "html_content": "<h1>First post</h1>",
     "excerpt": "Short summary",
@@ -98,10 +101,10 @@ Returns:
 ### Get Published Post
 
 ```http
-GET /api/integration/sites/{site_slug}/posts/{post_slug}
+GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en
 ```
 
-Returns the same object shape as one list item.
+Returns the same object shape as one list item. `language` is optional.
 
 ## Fetch Helper
 
@@ -126,12 +129,12 @@ async function bloggerFetch<T>(config: BloggerConfig, path: string): Promise<T> 
   return response.json() as Promise<T>
 }
 
-export function listBlogPosts(config: BloggerConfig) {
-  return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts?limit=20`)
+export function listBlogPosts(config: BloggerConfig, language = 'en') {
+  return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts?limit=20&language=${language}`)
 }
 
-export function getBlogPost(config: BloggerConfig, slug: string) {
-  return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts/${slug}`)
+export function getBlogPost(config: BloggerConfig, slug: string, language = 'en') {
+  return bloggerFetch(config, `/api/integration/sites/${config.siteSlug}/posts/${slug}?language=${language}`)
 }
 ```
 
@@ -154,6 +157,7 @@ export function BlogArticle({ post }: { post: { title: string; html_content: str
 - Meta description: `meta_description || excerpt`
 - Canonical URL: `canonical_url || site_origin + path`
 - Open Graph image: `cover_image_url`
+- Locale: `language`
 - Published time: `published_at`
 - Modified time: `updated_at`
 - Author display: `author.nickname || author.email`

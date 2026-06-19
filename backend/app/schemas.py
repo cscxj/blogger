@@ -6,6 +6,44 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 Status = Literal["draft", "published"]
+LanguageCode = Literal[
+    "en",
+    "zh",
+    "es",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "pt",
+    "it",
+    "nl",
+    "ru",
+    "ar",
+    "hi",
+    "id",
+    "vi",
+    "th",
+]
+UserRole = Literal["super_admin", "operator"]
+
+LANGUAGE_OPTIONS: tuple[LanguageCode, ...] = (
+    "en",
+    "zh",
+    "es",
+    "fr",
+    "de",
+    "ja",
+    "ko",
+    "pt",
+    "it",
+    "nl",
+    "ru",
+    "ar",
+    "hi",
+    "id",
+    "vi",
+    "th",
+)
 
 
 class UserBase(BaseModel):
@@ -32,9 +70,17 @@ class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    role: UserRole
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class UserAdminUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=120)
+    avatar_url: str | None = Field(default=None, max_length=1000)
+    role: UserRole | None = None
+    is_active: bool | None = None
 
 
 class Token(BaseModel):
@@ -84,6 +130,7 @@ class SiteRead(SiteBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    icon_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -116,8 +163,8 @@ class CategoryRead(CategoryBase):
 class PostBase(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     slug: str = Field(min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    status: Status = "draft"
-    markdown_content: str = ""
+    language: LanguageCode = "en"
+    markdown_content: str = Field(min_length=1)
     excerpt: str | None = None
     cover_image_url: str | None = Field(default=None, max_length=1000)
     meta_title: str | None = Field(default=None, max_length=255)
@@ -127,14 +174,16 @@ class PostBase(BaseModel):
 
 
 class PostCreate(PostBase):
-    pass
+    model_config = ConfigDict(extra="forbid")
 
 
 class PostUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = Field(default=None, min_length=1, max_length=240)
     slug: str | None = Field(default=None, min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    status: Status | None = None
-    markdown_content: str | None = None
+    language: LanguageCode | None = None
+    markdown_content: str | None = Field(default=None, min_length=1)
     excerpt: str | None = None
     cover_image_url: str | None = Field(default=None, max_length=1000)
     meta_title: str | None = Field(default=None, max_length=255)
@@ -158,6 +207,8 @@ class PostRead(PostBase):
     id: str
     site_id: str
     author_id: str
+    status: Status
+    markdown_content: str
     html_content: str
     published_at: datetime | None
     created_at: datetime
@@ -166,11 +217,19 @@ class PostRead(PostBase):
     category: CategoryRead | None = None
 
 
+class PostListResponse(BaseModel):
+    items: list[PostRead]
+    total: int
+    limit: int
+    offset: int
+
+
 class IntegrationPost(BaseModel):
     id: str
     site_slug: str
     title: str
     slug: str
+    language: LanguageCode
     path: str
     html_content: str
     excerpt: str | None
@@ -182,3 +241,7 @@ class IntegrationPost(BaseModel):
     updated_at: datetime
     author: AuthorRead
     category: CategoryRead | None = None
+
+
+class UploadResponse(BaseModel):
+    url: str

@@ -3,10 +3,13 @@ export type User = {
   email: string
   nickname: string | null
   avatar_url: string | null
+  role: UserRole
   is_active: boolean
   created_at: string
   updated_at: string
 }
+
+export type UserRole = 'super_admin' | 'operator'
 
 export type TokenResponse = {
   access_token: string
@@ -32,6 +35,7 @@ export type Site = {
   name: string
   slug: string
   base_url: string | null
+  icon_url: string | null
   description: string | null
   created_at: string
   updated_at: string
@@ -48,6 +52,23 @@ export type Category = {
 }
 
 export type PostStatus = 'draft' | 'published'
+export type LanguageCode =
+  | 'en'
+  | 'zh'
+  | 'es'
+  | 'fr'
+  | 'de'
+  | 'ja'
+  | 'ko'
+  | 'pt'
+  | 'it'
+  | 'nl'
+  | 'ru'
+  | 'ar'
+  | 'hi'
+  | 'id'
+  | 'vi'
+  | 'th'
 
 export type Author = {
   id: string
@@ -62,6 +83,7 @@ export type Post = {
   author_id: string
   title: string
   slug: string
+  language: LanguageCode
   status: PostStatus
   markdown_content: string
   html_content: string
@@ -81,7 +103,7 @@ export type Post = {
 export type PostPayload = {
   title: string
   slug: string
-  status: PostStatus
+  language: LanguageCode
   markdown_content: string
   excerpt?: string | null
   cover_image_url?: string | null
@@ -89,4 +111,20 @@ export type PostPayload = {
   meta_description?: string | null
   canonical_url?: string | null
   category_id?: string | null
+}
+
+export type PostListResponse = {
+  items: Post[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export type PostListParams = {
+  language?: LanguageCode | ''
+  category_id?: string
+  status?: PostStatus | ''
+  q?: string
+  limit?: number
+  offset?: number
 }

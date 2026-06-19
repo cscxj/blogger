@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/integration", tags=["integration"])
 
 def owned_site_by_slug_or_404(db: Session, user_id: str, site_slug: str) -> models.Site:
     site = db.execute(
-        select(models.Site).where(models.Site.owner_id == user_id, models.Site.slug == site_slug)
+        select(models.Site).where(models.Site.slug == site_slug)
     ).scalar_one_or_none()
     if not site:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
@@ -24,6 +24,7 @@ def integration_post(site: models.Site, post: models.Post) -> schemas.Integratio
         site_slug=site.slug,
         title=post.title,
         slug=post.slug,
+        language=post.language,
         path=f"/blog/{post.slug}",
         html_content=post.html_content,
         excerpt=post.excerpt,
@@ -68,6 +69,7 @@ def list_integration_categories(
 def list_integration_posts(
     site_slug: str,
     category_slug: str | None = None,
+    language: schemas.LanguageCode | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     principal: Principal = Depends(get_current_principal),
@@ -84,6 +86,8 @@ def list_integration_posts(
     )
     if category_slug:
         stmt = stmt.join(models.Category).where(models.Category.slug == category_slug)
+    if language:
+        stmt = stmt.where(models.Post.language == language)
     posts = list(db.execute(stmt).scalars().all())
     return [integration_post(site, post) for post in posts]
 
@@ -92,18 +96,22 @@ def list_integration_posts(
 def get_integration_post(
     site_slug: str,
     post_slug: str,
+    language: schemas.LanguageCode | None = None,
     principal: Principal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> schemas.IntegrationPost:
     site = owned_site_by_slug_or_404(db, principal.user.id, site_slug)
+    filters = [
+        models.Post.site_id == site.id,
+        models.Post.slug == post_slug,
+        models.Post.status == "published",
+    ]
+    if language:
+        filters.append(models.Post.language == language)
     post = db.execute(
         select(models.Post)
         .options(selectinload(models.Post.author), selectinload(models.Post.category))
-        .where(
-            models.Post.site_id == site.id,
-            models.Post.slug == post_slug,
-            models.Post.status == "published",
-        )
+        .where(*filters)
     ).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")

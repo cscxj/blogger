@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Check, Globe2, Loader2, Plus, Trash2 } from "lucide-react"
+import { Check, Loader2, Plus, Trash2 } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
@@ -7,6 +7,7 @@ import { z } from "zod"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { Field } from "@/components/field"
+import { SiteIcon } from "@/components/site-select"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -93,7 +94,7 @@ export function SitesView({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px,1fr]">
+    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
       <Card>
         <CardHeader>
           <CardTitle>{t("sites.new")}</CardTitle>
@@ -137,9 +138,7 @@ export function SitesView({
           >
             <CardHeader>
               <div className="flex min-w-0 items-start gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Globe2 className="size-4" />
-                </div>
+                <SiteIcon site={site} className="size-8" />
                 <div className="min-w-0">
                   <CardTitle className="truncate">{site.name}</CardTitle>
                   <CardDescription className="truncate">

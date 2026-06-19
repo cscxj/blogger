@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blogger Operator"
+  short_description: "Operate Blogger through the CLI"
+  default_prompt: "Use $blogger-operator to operate the Blogger system through the npm CLI."

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { BrowserRouter } from "react-router-dom"
 
 import { AppShell } from "@/components/app-shell"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -20,10 +21,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system" storageKey="blogger-admin-theme">
         <TooltipProvider>
-          <AuthProvider>
-            <AppShell />
-            <Toaster richColors />
-          </AuthProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <AppShell />
+              <Toaster richColors />
+            </AuthProvider>
+          </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

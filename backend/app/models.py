@@ -30,6 +30,7 @@ class User(TimestampMixin, Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     nickname: Mapped[str | None] = mapped_column(String(120))
     avatar_url: Mapped[str | None] = mapped_column(String(1000))
+    role: Mapped[str] = mapped_column(String(24), default="operator", nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
 
     access_keys: Mapped[list[AccessKey]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -60,6 +61,7 @@ class Site(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(1000))
+    icon_url: Mapped[str | None] = mapped_column(String(1000))
     description: Mapped[str | None] = mapped_column(Text)
 
     owner: Mapped[User] = relationship(back_populates="sites")
@@ -91,6 +93,7 @@ class Post(TimestampMixin, Base):
     author_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     title: Mapped[str] = mapped_column(String(240), nullable=False)
     slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    language: Mapped[str] = mapped_column(String(16), default="en", index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     markdown_content: Mapped[str] = mapped_column(Text, default="")
     html_content: Mapped[str] = mapped_column(Text, default="")

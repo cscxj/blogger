@@ -22,6 +22,9 @@ class Settings:
     access_token_minutes: int = int(os.getenv("ACCESS_TOKEN_MINUTES", "10080"))
     allowed_origins: list[str] = None  # type: ignore[assignment]
     auto_create_tables: bool = os.getenv("AUTO_CREATE_TABLES", "true").lower() == "true"
+    gcs_bucket: str | None = os.getenv("GCS_BUCKET") or None
+    public_asset_base_url: str | None = os.getenv("PUBLIC_ASSET_BASE_URL") or None
+    upload_prefix: str = os.getenv("UPLOAD_PREFIX", "uploads")
 
     def __post_init__(self) -> None:
         object.__setattr__(

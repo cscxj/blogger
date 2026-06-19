@@ -13,6 +13,24 @@ type GlobalOptions = {
 }
 
 const StatusSchema = z.enum(['draft', 'published'])
+const LanguageSchema = z.enum([
+  'en',
+  'zh',
+  'es',
+  'fr',
+  'de',
+  'ja',
+  'ko',
+  'pt',
+  'it',
+  'nl',
+  'ru',
+  'ar',
+  'hi',
+  'id',
+  'vi',
+  'th',
+])
 
 const program = new Command()
   .name('blogger')
@@ -49,6 +67,14 @@ async function readText(path?: string) {
     return Buffer.concat(chunks).toString('utf8')
   }
   return readFileSync(path, 'utf8')
+}
+
+async function uploadImage(path: string, kind: string): Promise<{ url: string }> {
+  const form = new FormData()
+  form.set('kind', kind)
+  const data = readFileSync(path)
+  form.set('file', new Blob([data]), path.split(/[\\/]/).pop() || 'upload')
+  return client().request<{ url: string }>('/api/uploads', { method: 'POST', body: form })
 }
 
 function compact<T extends Record<string, unknown>>(value: T) {
@@ -159,6 +185,50 @@ users
         body: JSON.stringify(compact({ nickname: options.nickname, avatar_url: options.avatarUrl })),
       }),
     )
+  })
+
+users.command('list').description('List users, super admin only').action(async () => {
+  requiredCredential()
+  print(await client().request('/api/users'))
+})
+
+users
+  .command('admin-update <id>')
+  .description('Update a user, super admin only')
+  .option('--nickname <nickname>', 'Nickname')
+  .option('--avatar-url <url>', 'Avatar URL')
+  .option('--role <role>', 'super_admin or operator')
+  .option('--active <true|false>', 'Set active state')
+  .action(
+    async (
+      id: string,
+      options: { nickname?: string; avatarUrl?: string; role?: string; active?: string },
+    ) => {
+      requiredCredential()
+      print(
+        await client().request(`/api/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(
+            compact({
+              nickname: options.nickname,
+              avatar_url: options.avatarUrl,
+              role: options.role ? z.enum(['super_admin', 'operator']).parse(options.role) : undefined,
+              is_active: options.active === undefined ? undefined : options.active === 'true',
+            }),
+          ),
+        }),
+      )
+    },
+  )
+
+const uploads = program.command('uploads').description('Upload images')
+
+uploads
+  .command('image <path>')
+  .option('--kind <kind>', 'avatar, cover, site, or asset', 'asset')
+  .action(async (path: string, options: { kind: string }) => {
+    requiredCredential()
+    print(await uploadImage(path, options.kind))
   })
 
 const keys = program.command('keys').description('Manage AccessKeys')
@@ -305,10 +375,31 @@ const posts = program.command('posts').description('Manage posts')
 posts
   .command('list')
   .requiredOption('--site <siteId>', 'Site ID')
-  .action(async (options: { site: string }) => {
+  .option('--language <code>', 'Language short code')
+  .option('--category-id <id>', 'Category ID')
+  .option('--status <status>', 'draft or published')
+  .option('--query <text>', 'Search title')
+  .option('--limit <number>', 'Limit', '50')
+  .option('--offset <number>', 'Offset', '0')
+  .action(
+    async (options: {
+      site: string
+      language?: string
+      categoryId?: string
+      status?: string
+      query?: string
+      limit: string
+      offset: string
+    }) => {
     requiredCredential()
-    print(await client().request(`/api/sites/${options.site}/posts`))
-  })
+      const params = new URLSearchParams({ limit: options.limit, offset: options.offset })
+      if (options.language) params.set('language', LanguageSchema.parse(options.language))
+      if (options.categoryId) params.set('category_id', options.categoryId)
+      if (options.status) params.set('status', StatusSchema.parse(options.status))
+      if (options.query) params.set('q', options.query)
+      print(await client().request(`/api/sites/${options.site}/posts?${params}`))
+    },
+  )
 
 posts
   .command('get <id>')
@@ -323,11 +414,12 @@ posts
   .requiredOption('--site <siteId>', 'Site ID')
   .requiredOption('--title <title>', 'Post title')
   .requiredOption('--slug <slug>', 'Post slug')
-  .option('--status <status>', 'draft or published', 'draft')
-  .option('--markdown <path>', 'Markdown file path, or - for stdin')
+  .requiredOption('--markdown <path>', 'Markdown file path, or - for stdin')
+  .option('--language <code>', 'Language short code', 'en')
   .option('--category-id <id>', 'Category ID')
   .option('--excerpt <excerpt>', 'Excerpt')
-  .option('--cover-image-url <url>', 'Cover image URL')
+  .option('--cover-image <path>', 'Upload cover image from file')
+  .option('--cover-image-url <url>', 'Existing cover image URL')
   .option('--meta-title <title>', 'SEO meta title')
   .option('--meta-description <description>', 'SEO meta description')
   .option('--canonical-url <url>', 'Canonical URL')
@@ -336,10 +428,11 @@ posts
       site: string
       title: string
       slug: string
-      status: string
+      language: string
       markdown?: string
       categoryId?: string
       excerpt?: string
+      coverImage?: string
       coverImageUrl?: string
       metaTitle?: string
       metaDescription?: string
@@ -347,17 +440,22 @@ posts
     }) => {
       requiredCredential()
       const markdownContent = await readText(options.markdown)
+      const coverImageUrl = options.coverImage
+        ? (
+            await uploadImage(options.coverImage, 'cover')
+          ).url
+        : options.coverImageUrl
       print(
         await client().request(`/api/sites/${options.site}/posts`, {
           method: 'POST',
           body: JSON.stringify({
             title: options.title,
             slug: options.slug,
-            status: StatusSchema.parse(options.status),
+            language: LanguageSchema.parse(options.language),
             markdown_content: markdownContent,
             category_id: options.categoryId,
             excerpt: options.excerpt,
-            cover_image_url: options.coverImageUrl,
+            cover_image_url: coverImageUrl,
             meta_title: options.metaTitle,
             meta_description: options.metaDescription,
             canonical_url: options.canonicalUrl,
@@ -372,11 +470,12 @@ posts
   .requiredOption('--site <siteId>', 'Site ID')
   .option('--title <title>', 'Post title')
   .option('--slug <slug>', 'Post slug')
-  .option('--status <status>', 'draft or published')
+  .option('--language <code>', 'Language short code')
   .option('--markdown <path>', 'Markdown file path, or - for stdin')
   .option('--category-id <id>', 'Category ID')
   .option('--excerpt <excerpt>', 'Excerpt')
-  .option('--cover-image-url <url>', 'Cover image URL')
+  .option('--cover-image <path>', 'Upload cover image from file')
+  .option('--cover-image-url <url>', 'Existing cover image URL')
   .option('--meta-title <title>', 'SEO meta title')
   .option('--meta-description <description>', 'SEO meta description')
   .option('--canonical-url <url>', 'Canonical URL')
@@ -387,10 +486,11 @@ posts
         site: string
         title?: string
         slug?: string
-        status?: string
+        language?: string
         markdown?: string
         categoryId?: string
         excerpt?: string
+        coverImage?: string
         coverImageUrl?: string
         metaTitle?: string
         metaDescription?: string
@@ -398,6 +498,11 @@ posts
       },
     ) => {
       requiredCredential()
+      const coverImageUrl = options.coverImage
+        ? (
+            await uploadImage(options.coverImage, 'cover')
+          ).url
+        : options.coverImageUrl
       print(
         await client().request(`/api/sites/${options.site}/posts/${id}`, {
           method: 'PATCH',
@@ -405,11 +510,11 @@ posts
             compact({
               title: options.title,
               slug: options.slug,
-              status: options.status ? StatusSchema.parse(options.status) : undefined,
+              language: options.language ? LanguageSchema.parse(options.language) : undefined,
               markdown_content: options.markdown ? await readText(options.markdown) : undefined,
               category_id: options.categoryId,
               excerpt: options.excerpt,
-              cover_image_url: options.coverImageUrl,
+              cover_image_url: coverImageUrl,
               meta_title: options.metaTitle,
               meta_description: options.metaDescription,
               canonical_url: options.canonicalUrl,
@@ -464,12 +569,14 @@ integration
   .command('posts')
   .requiredOption('--site-slug <slug>', 'Site slug')
   .option('--category-slug <slug>', 'Category slug')
+  .option('--language <code>', 'Language short code')
   .option('--limit <number>', 'Limit', '20')
   .option('--offset <number>', 'Offset', '0')
-  .action(async (options: { siteSlug: string; categorySlug?: string; limit: string; offset: string }) => {
+  .action(async (options: { siteSlug: string; categorySlug?: string; language?: string; limit: string; offset: string }) => {
     requiredCredential()
     const params = new URLSearchParams({ limit: options.limit, offset: options.offset })
     if (options.categorySlug) params.set('category_slug', options.categorySlug)
+    if (options.language) params.set('language', LanguageSchema.parse(options.language))
     print(await client().request(`/api/integration/sites/${options.siteSlug}/posts?${params}`))
   })
 
@@ -477,9 +584,13 @@ integration
   .command('post')
   .requiredOption('--site-slug <slug>', 'Site slug')
   .requiredOption('--post-slug <slug>', 'Post slug')
-  .action(async (options: { siteSlug: string; postSlug: string }) => {
+  .option('--language <code>', 'Language short code')
+  .action(async (options: { siteSlug: string; postSlug: string; language?: string }) => {
     requiredCredential()
-    print(await client().request(`/api/integration/sites/${options.siteSlug}/posts/${options.postSlug}`))
+    const params = new URLSearchParams()
+    if (options.language) params.set('language', LanguageSchema.parse(options.language))
+    const suffix = params.size ? `?${params}` : ''
+    print(await client().request(`/api/integration/sites/${options.siteSlug}/posts/${options.postSlug}${suffix}`))
   })
 
 program.parseAsync().catch((error: unknown) => {

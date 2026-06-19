@@ -3,9 +3,11 @@
 Shared blog service for product websites. The repo contains:
 
 - `backend`: FastAPI + SQLAlchemy API backed by Postgres.
-- `admin`: React + Tailwind + shadcn-style management UI.
+- `admin`: React + Tailwind + shadcn UI management UI.
 - `cli`: TypeScript npm CLI for operators and AI tools.
 - `skills/blogger-integration`: Codex skill for product-site integration.
+- `skills/blogger-operator`: Codex skill for AI/operator usage through the CLI.
+- `agents/api-change-sync-agent.md`: API contract sync checklist for backend/admin/CLI/skills changes.
 - `deploy`: Google Cloud deployment scripts and Cloud Run descriptors.
 
 ## Local Development
@@ -31,8 +33,14 @@ Run the admin app:
 
 ```bash
 cd admin
-npm install
-npm run dev -- --host 0.0.0.0
+pnpm install
+pnpm dev -- --host 0.0.0.0
+```
+
+The admin UI is initialized with the official shadcn CLI for Vite/Tailwind v4:
+
+```bash
+pnpm dlx shadcn@latest init -t vite -b radix -p vega --force --reinstall
 ```
 
 Run the CLI from source:
@@ -47,6 +55,9 @@ node dist/index.js --help
 ## Authentication
 
 The admin app uses email/password login and receives a JWT. The CLI and product-site integration use an AccessKey.
+
+The first registered user is automatically `super_admin`; later users default to `operator`.
+Only super admins can create/update/delete sites and manage users. Operators can manage content on existing sites.
 
 Supported AccessKey headers:
 
@@ -64,11 +75,14 @@ Authorization: Bearer blog_sk_...
 
 Product websites should use the skill in `skills/blogger-integration`. The stable read path is:
 
-- `GET /api/integration/sites/{site_slug}/posts`
-- `GET /api/integration/sites/{site_slug}/posts/{post_slug}`
+- `GET /api/integration/sites/{site_slug}/posts?language=en`
+- `GET /api/integration/sites/{site_slug}/posts/{post_slug}?language=en`
 - `GET /api/integration/sites/{site_slug}/categories`
 
-These endpoints return published content only and require an AccessKey belonging to the site owner.
+These endpoints return published content only and require an AccessKey.
+
+Posts use standard short language codes such as `en`, `zh`, `ja`, and `de`.
+Create/update post calls always save drafts; use publish/unpublish endpoints or CLI commands to change status.
 
 ## Google Cloud
 
@@ -77,6 +91,7 @@ The deploy scripts assume:
 - Cloud Run for `blogger-api` and `blogger-admin`.
 - Cloud SQL Postgres for database storage.
 - Secret Manager for `DATABASE_URL`, `SECRET_KEY`, and `ACCESS_KEY_PEPPER`.
+- Cloud Storage for uploaded avatars and cover images.
 - Artifact Registry for container images.
 
 Deploy from an authenticated `gcloud` shell:

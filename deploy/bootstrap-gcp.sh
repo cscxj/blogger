@@ -7,6 +7,7 @@ REPOSITORY="${REPOSITORY:-blogger}"
 INSTANCE="${INSTANCE:-blogger-postgres}"
 DB_NAME="${DB_NAME:-blogger}"
 DB_USER="${DB_USER:-blogger}"
+ASSET_BUCKET="${ASSET_BUCKET:-${PROJECT_ID}-blogger-assets}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "PROJECT_ID is required" >&2
@@ -20,6 +21,7 @@ gcloud services enable \
   cloudbuild.googleapis.com \
   run.googleapis.com \
   secretmanager.googleapis.com \
+  storage.googleapis.com \
   sqladmin.googleapis.com
 
 if ! gcloud artifacts repositories describe "${REPOSITORY}" --location "${REGION}" >/dev/null 2>&1; then
@@ -43,6 +45,16 @@ fi
 if ! gcloud sql databases describe "${DB_NAME}" --instance="${INSTANCE}" >/dev/null 2>&1; then
   gcloud sql databases create "${DB_NAME}" --instance="${INSTANCE}"
 fi
+
+if ! gcloud storage buckets describe "gs://${ASSET_BUCKET}" >/dev/null 2>&1; then
+  gcloud storage buckets create "gs://${ASSET_BUCKET}" \
+    --location="${REGION}" \
+    --uniform-bucket-level-access
+fi
+
+gcloud storage buckets add-iam-policy-binding "gs://${ASSET_BUCKET}" \
+  --member=allUsers \
+  --role=roles/storage.objectViewer >/dev/null
 
 DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-blogger-db-password}"
 SECRET_KEY_SECRET="${SECRET_KEY_SECRET:-blogger-secret-key}"
@@ -86,4 +98,5 @@ REGION=${REGION}
 REPOSITORY=${REPOSITORY}
 INSTANCE=${INSTANCE}
 CONNECTION_NAME=${CONNECTION_NAME}
+ASSET_BUCKET=${ASSET_BUCKET}
 EOF

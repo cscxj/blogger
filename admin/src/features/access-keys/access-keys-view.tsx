@@ -81,7 +81,7 @@ export function AccessKeysView({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px,1fr]">
+    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
       <Card>
         <CardHeader>
           <CardTitle>{t("keys.createTitle")}</CardTitle>
@@ -109,6 +109,9 @@ export function AccessKeysView({
             <div className="mt-4 rounded-lg border bg-muted/50 p-3">
               <div className="mb-2 text-sm font-medium">
                 {t("keys.newKey")}
+              </div>
+              <div className="mb-2 text-xs text-muted-foreground">
+                {t("keys.copyOnce")}
               </div>
               <Input
                 className="font-mono"

@@ -65,3 +65,9 @@ def get_current_principal(
 
 def require_user(principal: Principal = Depends(get_current_principal)) -> models.User:
     return principal.user
+
+
+def require_super_admin(user: models.User = Depends(require_user)) -> models.User:
+    if user.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin role required")
+    return user

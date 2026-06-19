@@ -7,6 +7,7 @@ REPOSITORY="${REPOSITORY:-blogger}"
 INSTANCE="${INSTANCE:-blogger-postgres}"
 API_SERVICE="${API_SERVICE:-blogger-api}"
 ADMIN_SERVICE="${ADMIN_SERVICE:-blogger-admin}"
+ASSET_BUCKET="${ASSET_BUCKET:-${PROJECT_ID}-blogger-assets}"
 TAG="${TAG:-$(date +%Y%m%d%H%M%S)}"
 
 DATABASE_URL_SECRET="${DATABASE_URL_SECRET:-blogger-database-url}"
@@ -70,7 +71,7 @@ gcloud run deploy "${API_SERVICE}" \
   --allow-unauthenticated \
   --add-cloudsql-instances "${CONNECTION_NAME}" \
   --set-secrets "DATABASE_URL=${DATABASE_URL_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,ACCESS_KEY_PEPPER=${ACCESS_KEY_PEPPER_SECRET}:latest" \
-  --set-env-vars "^|^AUTO_CREATE_TABLES=true|ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174" \
+  --set-env-vars "^|^AUTO_CREATE_TABLES=true|ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174|GCS_BUCKET=${ASSET_BUCKET}|PUBLIC_ASSET_BASE_URL=https://storage.googleapis.com/${ASSET_BUCKET}" \
   --port 8080
 
 API_URL="$(run_url "${API_SERVICE}")"

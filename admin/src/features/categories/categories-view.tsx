@@ -98,7 +98,7 @@ export function CategoriesView({
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[420px,1fr]">
+    <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
       <Card>
         <CardHeader>
           <CardTitle>{t("categories.new")}</CardTitle>

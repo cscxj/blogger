@@ -50,12 +50,18 @@ export function CategoriesView({
   })
 
   const createMutation = useMutation({
-    mutationFn: (values: CategoryFormValues) =>
-      api.createCategory(token, site?.id ?? "", {
+    mutationFn: (values: CategoryFormValues) => {
+      const slug = slugify(values.name)
+      if (!slug) {
+        throw new Error(t("categories.slugRequired"))
+      }
+
+      return api.createCategory(token, site?.id ?? "", {
         name: values.name,
-        slug: slugify(values.name),
+        slug,
         description: values.description || null,
-      }),
+      })
+    },
     onSuccess: async () => {
       form.reset()
       toast.success(t("categories.created"))

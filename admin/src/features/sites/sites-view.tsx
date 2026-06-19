@@ -87,14 +87,20 @@ export function SitesView({
   const createLanguages = useFieldArray({ control: form.control, name: "languages" })
 
   const createMutation = useMutation({
-    mutationFn: (values: SiteFormValues) =>
-      api.createSite(token, {
+    mutationFn: (values: SiteFormValues) => {
+      const slug = slugify(values.name)
+      if (!slug) {
+        throw new Error(t("sites.slugRequired"))
+      }
+
+      return api.createSite(token, {
         name: values.name,
-        slug: slugify(values.name),
+        slug,
         base_url: values.baseUrl || null,
         description: values.description || null,
         languages: values.languages,
-      }),
+      })
+    },
     onSuccess: async (site) => {
       form.reset()
       onSelectSite(site.id)

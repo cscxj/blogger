@@ -105,6 +105,7 @@ const resources = {
         list: "Categories",
         name: "Name",
         new: "New category",
+        slugRequired: "Enter a category name that can generate a slug.",
       },
       sites: {
         baseUrl: "Base URL",
@@ -121,6 +122,7 @@ const resources = {
         name: "Name",
         new: "New site",
         saveLanguages: "Save languages",
+        slugRequired: "Enter a site name that can generate a slug.",
       },
       keys: {
         confirmRevoke: "Revoke \"{{name}}\"?",
@@ -252,6 +254,7 @@ const resources = {
         list: "分类",
         name: "名称",
         new: "新建分类",
+        slugRequired: "请输入可生成 slug 的分类名称。",
       },
       sites: {
         baseUrl: "官网地址",
@@ -268,6 +271,7 @@ const resources = {
         name: "名称",
         new: "新建站点",
         saveLanguages: "保存语言",
+        slugRequired: "请输入可生成 slug 的站点名称。",
       },
       keys: {
         confirmRevoke: "确认吊销“{{name}}”？",

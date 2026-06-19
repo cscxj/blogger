@@ -1,4 +1,5 @@
 import { clsx, type ClassValue } from "clsx"
+import { pinyin } from "pinyin-pro"
 import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
@@ -6,7 +7,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function slugify(value: string) {
-  return value
+  const transliterated = pinyin(value, {
+    nonZh: "consecutive",
+    toneType: "none",
+    type: "array",
+  }).join("-")
+
+  return transliterated
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")

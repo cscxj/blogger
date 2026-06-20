@@ -27,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { usePost } from "@/hooks/use-blogger-queries"
 import { api } from "@/lib/api"
-import { firstSiteLanguage, siteLanguageOptions } from "@/lib/languages"
+import { firstSiteLanguage, languageOptionsWithValue } from "@/lib/languages"
 import { slugify } from "@/lib/utils"
 import type { Category, Post, PostPayload, Site } from "@/types"
 
@@ -70,7 +70,8 @@ export function PostEditorPage({
     defaultValues: emptyPostForm(defaultLanguage),
   })
   const coverImageUrl = useWatch({ control: form.control, name: "coverImageUrl" })
-  const languageOptions = siteLanguageOptions(site)
+  const selectedLanguage = useWatch({ control: form.control, name: "language" })
+  const languageOptions = languageOptionsWithValue(site, selectedLanguage)
 
   useEffect(() => {
     form.reset(editing ? formFromPost(editing) : emptyPostForm(defaultLanguage))

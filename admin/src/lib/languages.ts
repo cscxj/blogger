@@ -9,6 +9,17 @@ export function siteLanguageOptions(site: Site | null) {
   }))
 }
 
+export function languageOptionsWithValue(site: Site | null, value: string) {
+  const options = siteLanguageOptions(site)
+  const selectedValue = value.trim()
+
+  if (!selectedValue || options.some((option) => option.value === selectedValue)) {
+    return options
+  }
+
+  return [{ value: selectedValue, label: selectedValue }, ...options]
+}
+
 export function firstSiteLanguage(site: Site | null) {
   return siteLanguageOptions(site)[0]?.value ?? "en"
 }

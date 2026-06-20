@@ -6,7 +6,7 @@ import { Command } from 'commander'
 import { z } from 'zod'
 
 import { ApiClient, ApiError } from './api.js'
-import { configPath, loadConfig, resolveConfig, saveConfig } from './config.js'
+import { clearCredential, configPath, loadConfig, resolveConfig, saveConfig } from './config.js'
 
 type GlobalOptions = {
   apiUrl?: string
@@ -38,16 +38,59 @@ function client() {
   return new ApiClient(config.apiUrl, config.accessKey)
 }
 
+function clientWithoutCredential() {
+  const options = program.opts<GlobalOptions>()
+  const config = resolveConfig(options)
+  return new ApiClient(config.apiUrl)
+}
+
 function print(value: unknown) {
   if (value === undefined) return
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }
 
+function maskSecret(value: string | undefined) {
+  return value ? `${value.slice(0, 18)}...` : undefined
+}
+
 function requiredCredential() {
   const config = resolveConfig(program.opts<GlobalOptions>())
   if (!config.accessKey) {
-    throw new Error('Missing AccessKey. Set BLOGGER_ACCESS_KEY or run `blogger config set --access-key ...`.')
+    throw new Error('Missing credential. Run `blogger login`, set BLOGGER_ACCESS_KEY, or run `blogger config set --access-key ...`.')
   }
+}
+
+async function loginAndPersist(options: {
+  email: string
+  password: string
+  createKey: boolean
+  keyName: string
+}) {
+  const current = resolveConfig(program.opts<GlobalOptions>())
+  const response = await clientWithoutCredential().request<{ access_token: string; user: unknown }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: options.email, password: options.password }),
+  })
+  const credential = options.createKey
+    ? (
+        await new ApiClient(current.apiUrl, response.access_token).request<{ access_key: string }>(
+          '/api/access-keys',
+          {
+            method: 'POST',
+            body: JSON.stringify({ name: options.keyName }),
+          },
+        )
+      ).access_key
+    : response.access_token
+  const saved = saveConfig({ ...loadConfig(), apiUrl: current.apiUrl, accessKey: credential })
+
+  print({
+    user: response.user,
+    apiUrl: saved.apiUrl,
+    credential: maskSecret(saved.accessKey),
+    credentialType: options.createKey ? 'access_key' : 'jwt',
+    saved: configPath,
+  })
 }
 
 async function readText(path?: string) {
@@ -132,6 +175,33 @@ function parseSiteLanguages(values?: string[]) {
   return languages
 }
 
+program
+  .command('login')
+  .description('Log in and save local CLI credentials')
+  .requiredOption('--email <email>', 'Email')
+  .requiredOption('--password <password>', 'Password')
+  .option('--key-name <name>', 'AccessKey name to create and save', 'blogger-cli')
+  .option('--no-create-key', 'Save the temporary JWT instead of creating an AccessKey')
+  .action((options: { email: string; password: string; keyName: string; createKey: boolean }) =>
+    loginAndPersist(options),
+  )
+
+program
+  .command('logout')
+  .description('Remove the saved credential while keeping the API URL')
+  .action(() => {
+    const saved = clearCredential()
+    print({ apiUrl: saved.apiUrl, credential: undefined, saved: configPath })
+  })
+
+program
+  .command('whoami')
+  .description('Print the current authenticated user')
+  .action(async () => {
+    requiredCredential()
+    print(await client().request('/api/users/me'))
+  })
+
 const config = program.command('config').description('Manage local CLI config')
 
 config
@@ -164,7 +234,7 @@ auth
   .requiredOption('--password <password>', 'Password')
   .option('--create-key <name>', 'Create and save an AccessKey after login')
   .action(async (options: { email: string; password: string; createKey?: string }) => {
-    const response = await client().request<{ access_token: string; user: unknown }>('/api/auth/login', {
+    const response = await clientWithoutCredential().request<{ access_token: string; user: unknown }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email: options.email, password: options.password }),
     })
@@ -191,7 +261,7 @@ auth
   .option('--nickname <nickname>', 'Nickname')
   .option('--create-key <name>', 'Create and save an AccessKey after registration')
   .action(async (options: { email: string; password: string; nickname?: string; createKey?: string }) => {
-    const response = await client().request<{ access_token: string; user: unknown }>('/api/auth/register', {
+    const response = await clientWithoutCredential().request<{ access_token: string; user: unknown }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         email: options.email,

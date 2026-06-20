@@ -52,6 +52,21 @@ npm run build
 node dist/index.js --help
 ```
 
+The CLI behaves like a persistent client. The hosted Blogger API is the default
+target, and the first login creates and saves a CLI AccessKey in
+`~/.blogger/config.json` so later commands do not need repeated API/auth flags:
+
+```bash
+blogger login --email user@example.com --password '...'
+blogger whoami
+blogger sites list
+blogger logout
+```
+
+Use `--api-url`, `BLOGGER_API_URL`, or `blogger config set --api-url ...` only
+when targeting a different deployment. Use `BLOGGER_CONFIG_PATH` to store config
+somewhere other than `~/.blogger/config.json`.
+
 ## Authentication
 
 The admin app uses email/password login and receives a JWT. The CLI and product-site integration use an AccessKey.

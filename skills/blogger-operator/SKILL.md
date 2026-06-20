@@ -9,14 +9,18 @@ Use the `blogger` npm CLI for operations instead of calling HTTP endpoints by ha
 
 ## Configuration Gate
 
-Before running any CLI command that contacts the API, confirm the required base runtime configuration with the user. Do not infer it from localhost defaults, repository examples, or an existing CLI config unless the user explicitly says to use that exact configured environment.
+Before running operation-specific CLI commands, first determine whether the CLI is already logged in for the intended environment. The CLI stores local client config in `~/.blogger/config.json` by default, or in `BLOGGER_CONFIG_PATH` when set.
 
-Before this gate is satisfied, only run non-network commands such as `--help`, package install/build commands, or static file inspection.
+Safe preflight commands:
+
+- `blogger config get` to inspect the resolved API URL and masked credential.
+- `blogger whoami` to verify the saved credential works.
+- `blogger --help`, package install/build commands, or static file inspection.
 
 Required base values:
 
-- API URL: ask for `BLOGGER_API_URL` or `--api-url`. Never default to `http://localhost:8000` unless the user explicitly says the target is local.
-- Auth: ask for an AccessKey such as `blog_sk_...`, or for confirmation that the user has already configured one for the intended environment. Normal operations should use AccessKeys.
+- API URL: the CLI defaults to the hosted Blogger API. Ask for `BLOGGER_API_URL` or `--api-url` only when the task targets a different deployment or the user explicitly says the target is local.
+- Auth: prefer saved CLI credentials. If `blogger whoami` fails because no credential is saved, ask the user to run or authorize `blogger login --email <email> --password <password>`; the login command creates and saves a CLI AccessKey by default. Only ask for a raw AccessKey when the user does not want email/password login.
 
 Ask for operation-specific values only when the requested operation needs them:
 
@@ -24,26 +28,28 @@ Ask for operation-specific values only when the requested operation needs them:
 - Language: ask for the site-specific language key only when creating, updating, or filtering localized posts. If the resolved site includes a `languages` list, use it to infer or present choices. Do not assume `en-US` or `zh-Hans` is valid for every site.
 - Content inputs: for post creation, ask for title, slug, markdown content or file path, and whether drafting content is allowed if content is not supplied.
 
-If base configuration is missing, ask a concise follow-up instead of trying commands such as `blogger sites list`, `blogger users me`, or `blogger integration sites`. Do not use `blogger config get` to satisfy the gate, and do not proceed with `localhost` or another discovered value unless the user confirms that it is the intended target.
+If base auth is missing, ask a concise follow-up instead of requiring every later command to pass `--api-url` or `--access-key`. Do not proceed with a local API URL unless the user confirms that the intended target is local.
 
 Example missing-config response:
 
-> Please provide `BLOGGER_API_URL` and an AccessKey, or confirm that both are already configured for the intended environment. If this task targets a site, tell me the Site name and I will look up its ID/slug after auth is confirmed.
+> Please log in once with `blogger login --email <email> --password <password>`, or provide an AccessKey if you prefer key-based setup. If this task targets a site, tell me the Site name and I will look up its ID/slug after auth is confirmed.
 
 ## Quick Start
 
 1. Ensure the CLI is installed or runnable from the repo:
    - Package command: `npx @shulex/blogger-operator-cli --help`
    - Repo command: `cd cli && npm install && npm run build && node dist/index.js --help`
-2. Configure API and AccessKey:
-   - `blogger config set --api-url <API_URL> --access-key <blog_sk_...>`
-   - Or set `BLOGGER_API_URL` and `BLOGGER_ACCESS_KEY`.
+2. Log in once:
+   - `blogger login --email user@example.com --password '...'`
+   - The CLI creates and saves an AccessKey in `~/.blogger/config.json`.
+   - For alternate deployments, run `blogger --api-url <API_URL> login --email user@example.com --password '...'`.
+   - Raw-key setup is still supported with `blogger config set --api-url <API_URL> --access-key <blog_sk_...>`.
 3. Read [references/cli.md](references/cli.md) before operating posts, users, uploads, or role-restricted commands. Only run API commands after the Configuration Gate is satisfied.
 
 ## Operating Rules
 
 - Use AccessKey auth. The CLI also accepts a temporary JWT for bootstrap commands, but normal operations should use AccessKeys.
-- Treat created AccessKeys as one-time secrets. Show the full key only immediately after creation and tell the user to store it.
+- Treat created AccessKeys as secrets. `blogger login` saves the created key locally and prints only a masked credential.
 - Do not expose or repeat user-provided AccessKeys in final answers, logs, or summaries.
 - Do not ask users for raw site IDs during normal workflows. Ask for the Site name when a site-scoped operation needs it, then resolve the internal ID/slug with the CLI.
 - Do not pass `status` to create/update post commands. Use `posts publish` and `posts unpublish`.

@@ -1,24 +1,37 @@
 # Blogger CLI Reference
 
-All API-contacting commands in this reference assume the user has already confirmed the target API URL and authentication for the intended environment. Do not run them against CLI defaults, discovered local config, or `http://localhost:8000` unless the user explicitly says the target is local.
+The CLI is a persistent client. It defaults to the hosted Blogger API and stores
+local config in `~/.blogger/config.json`, or `BLOGGER_CONFIG_PATH` when set.
+After `blogger login`, normal commands should not need repeated API/auth flags.
 
-Before operating, confirm:
+Before operating, verify:
 
-- `BLOGGER_API_URL` or an explicit `--api-url`.
-- `BLOGGER_ACCESS_KEY` or an explicit `--access-key`.
+- `blogger whoami` succeeds for the intended environment, or
+- the user explicitly asks to use `BLOGGER_API_URL`, `BLOGGER_ACCESS_KEY`, `--api-url`, or `--access-key`.
 
 Ask for site information only when the operation needs a site. Ask the user for the Site name, not `siteId` or `siteSlug`. After API URL and auth are confirmed, resolve the Site name by running `sites list` for admin/content/category commands or `integration sites` for public integration reads. Match `name` first and `slug` second, then use the resolved `id` or `slug` internally. If matches are ambiguous or missing, ask the user to choose by Site name.
 
 Ask for the target site's language key only when using `--language`. If the resolved site includes `languages`, use that list to infer or present choices.
 
-If base API/auth configuration is missing, ask the user for it before running `sites list`, `users me`, `integration sites`, or any other API command. Use `config get` only when the user explicitly asks to inspect local CLI config; it does not satisfy the configuration gate by itself.
+If auth is missing, ask the user to log in once instead of requiring credentials
+on every command. Use local API targets only when the user says the target is
+local.
 
 ## Auth And Config
 
 ```bash
-blogger config set --api-url https://blogger-api-xxxxx.run.app --access-key blog_sk_...
-# Only when the user explicitly asks to inspect local CLI config:
+blogger login --email user@example.com --password '...'
+blogger whoami
+blogger logout
+
+# Inspect local CLI config. Credentials are masked.
 blogger config get
+
+# Alternate deployment or raw-key setup:
+blogger --api-url https://blogger-api-xxxxx.run.app login --email user@example.com --password '...'
+blogger config set --api-url https://blogger-api-xxxxx.run.app --access-key blog_sk_...
+
+# Lower-level bootstrap commands are still available:
 blogger auth login --email user@example.com --password '...' --create-key cli
 blogger auth register --email user@example.com --password '...' --nickname User --create-key cli
 ```
@@ -29,7 +42,7 @@ blogger auth register --email user@example.com --password '...' --nickname User 
 Use `sites list` to resolve a user-provided Site name to the internal site ID needed by admin/content/category commands.
 
 ```bash
-BLOGGER_API_URL=https://blogger-api-xxxxx.run.app BLOGGER_ACCESS_KEY=blog_sk_... blogger sites list
+blogger sites list
 blogger sites create --name "Main Site" --slug main-site --base-url https://example.com --language en-US:English --language zh-Hans:简体中文
 blogger sites update <resolvedSiteId> --base-url https://example.com
 blogger sites update <resolvedSiteId> --language en-US:English --language zh-Hans:简体中文 --language ja-JP:日本語

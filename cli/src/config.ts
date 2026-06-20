@@ -1,16 +1,16 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
 const ConfigSchema = z.object({
-  apiUrl: z.string().url().default('http://localhost:8000'),
+  apiUrl: z.string().url().default('https://blogger-api-5qjldqffdq-uc.a.run.app'),
   accessKey: z.string().optional(),
 })
 
 export type CliConfig = z.infer<typeof ConfigSchema>
 
-export const configPath = join(homedir(), '.blogger', 'config.json')
+export const configPath = process.env.BLOGGER_CONFIG_PATH || join(homedir(), '.blogger', 'config.json')
 
 export function loadConfig(): CliConfig {
   try {
@@ -23,8 +23,15 @@ export function loadConfig(): CliConfig {
 
 export function saveConfig(config: CliConfig): CliConfig {
   mkdirSync(dirname(configPath), { recursive: true })
-  writeFileSync(configPath, `${JSON.stringify(ConfigSchema.parse(config), null, 2)}\n`, 'utf8')
-  return config
+  const parsed = ConfigSchema.parse(config)
+  writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
+  chmodSync(configPath, 0o600)
+  return parsed
+}
+
+export function clearCredential(): CliConfig {
+  const current = loadConfig()
+  return saveConfig({ apiUrl: current.apiUrl })
 }
 
 export function resolveConfig(overrides: { apiUrl?: string; accessKey?: string }): CliConfig {

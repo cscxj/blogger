@@ -5,7 +5,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { selectedOptionLabel, type SelectOption } from "@/lib/select-options"
+import {
+  isAllowedSelectValue,
+  selectedOptionLabel,
+  type SelectOption,
+} from "@/lib/select-options"
 import { cn } from "@/lib/utils"
 
 export function SimpleSelect({
@@ -30,7 +34,11 @@ export function SimpleSelect({
   return (
     <Select
       value={value}
-      onValueChange={onValueChange}
+      onValueChange={(nextValue) => {
+        if (isAllowedSelectValue(options, nextValue)) {
+          onValueChange(nextValue)
+        }
+      }}
       disabled={disabled || options.length === 0}
     >
       <SelectTrigger className={cn("w-full", className)} aria-label={ariaLabel}>

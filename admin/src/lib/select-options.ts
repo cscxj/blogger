@@ -13,3 +13,7 @@ export function selectedOptionLabel(options: SelectOption[], value: string | und
 
   return options.find((option) => option.value === selectedValue)?.label ?? selectedValue
 }
+
+export function isAllowedSelectValue(options: SelectOption[], value: string) {
+  return value !== "" || options.some((option) => option.value === "")
+}

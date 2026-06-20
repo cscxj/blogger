@@ -5,13 +5,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { selectedOptionLabel, type SelectOption } from "@/lib/select-options"
 import { cn } from "@/lib/utils"
-
-export type SelectOption = {
-  value: string
-  label: string
-  disabled?: boolean
-}
 
 export function SimpleSelect({
   value,
@@ -30,6 +25,8 @@ export function SimpleSelect({
   disabled?: boolean
   "aria-label"?: string
 }) {
+  const selectedLabel = selectedOptionLabel(options, value)
+
   return (
     <Select
       value={value}
@@ -37,7 +34,7 @@ export function SimpleSelect({
       disabled={disabled || options.length === 0}
     >
       <SelectTrigger className={cn("w-full", className)} aria-label={ariaLabel}>
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={placeholder}>{selectedLabel || undefined}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (

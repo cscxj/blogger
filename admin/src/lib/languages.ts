@@ -9,9 +9,9 @@ export function siteLanguageOptions(site: Site | null) {
   }))
 }
 
-export function languageOptionsWithValue(site: Site | null, value: string) {
+export function languageOptionsWithValue(site: Site | null, value: string | undefined) {
   const options = siteLanguageOptions(site)
-  const selectedValue = value.trim()
+  const selectedValue = value?.trim() ?? ""
 
   if (!selectedValue || options.some((option) => option.value === selectedValue)) {
     return options

@@ -9,6 +9,8 @@ import type {
   Site,
   SiteLanguage,
   TokenResponse,
+  TranslationGeneratePayload,
+  TranslationGenerateResponse,
   User,
 } from '../types'
 
@@ -181,6 +183,12 @@ export const api = {
   updatePost: (token: string, siteId: string, postId: string, payload: Partial<PostPayload>) =>
     request<Post>(`/api/sites/${siteId}/posts/${postId}`, {
       method: 'PATCH',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  generateTranslations: (token: string, siteId: string, postId: string, payload: TranslationGeneratePayload) =>
+    request<TranslationGenerateResponse>(`/api/sites/${siteId}/posts/${postId}/translations/generate`, {
+      method: 'POST',
       token,
       body: JSON.stringify(payload),
     }),

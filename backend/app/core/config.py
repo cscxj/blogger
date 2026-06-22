@@ -25,6 +25,10 @@ class Settings:
     gcs_bucket: str | None = os.getenv("GCS_BUCKET") or None
     public_asset_base_url: str | None = os.getenv("PUBLIC_ASSET_BASE_URL") or None
     upload_prefix: str = os.getenv("UPLOAD_PREFIX", "uploads")
+    translation_api_base_url: str | None = os.getenv("TRANSLATION_API_BASE_URL") or None
+    translation_api_key: str | None = os.getenv("TRANSLATION_API_KEY") or None
+    translation_model: str | None = os.getenv("TRANSLATION_MODEL") or None
+    translation_timeout_seconds: float = float(os.getenv("TRANSLATION_TIMEOUT_SECONDS", "60"))
 
     def __post_init__(self) -> None:
         object.__setattr__(

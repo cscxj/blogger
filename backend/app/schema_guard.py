@@ -46,6 +46,8 @@ def ensure_schema() -> None:
     posts = _column_names("posts")
     if posts and "language" not in posts:
         _add_column("posts", "language VARCHAR(64) NOT NULL DEFAULT 'en'")
+    if posts and "author_display_name" not in posts:
+        _add_column("posts", "author_display_name VARCHAR(160)")
 
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql" and posts and "language" in posts:

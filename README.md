@@ -110,6 +110,10 @@ The deploy scripts assume:
 - Cloud Storage for uploaded avatars and cover images.
 - Public upload URLs are served through the API asset proxy by default.
 - Artifact Registry for container images.
+- Optional translation provider config for draft generation:
+  - `TRANSLATION_API_BASE_URL`
+  - `TRANSLATION_API_KEY`
+  - `TRANSLATION_MODEL`
 
 Deploy from an authenticated `gcloud` shell:
 

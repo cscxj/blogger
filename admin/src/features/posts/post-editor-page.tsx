@@ -1,7 +1,7 @@
 import MDEditor from "@uiw/react-md-editor"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Globe2, Loader2, Save, Upload } from "lucide-react"
-import { useEffect } from "react"
+import { Globe2, Languages, Loader2, Save, Upload } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { Link, useNavigate, useParams } from "react-router-dom"
@@ -22,12 +22,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { usePost } from "@/hooks/use-blogger-queries"
 import { api } from "@/lib/api"
-import { firstSiteLanguage, languageOptionsWithValue } from "@/lib/languages"
+import { firstSiteLanguage, languageOptionsWithValue, siteLanguageLabel } from "@/lib/languages"
 import { slugify } from "@/lib/utils"
 import type { Category, Post, PostPayload, Site } from "@/types"
 
@@ -62,6 +70,9 @@ export function PostEditorPage({
   const { postId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [translationDialogOpen, setTranslationDialogOpen] = useState(false)
+  const [selectedTranslationLanguages, setSelectedTranslationLanguages] = useState<string[]>([])
+  const [overwriteExistingTranslations, setOverwriteExistingTranslations] = useState(false)
   const postQuery = usePost(token, site?.id ?? null, postId ?? null)
   const editing = postQuery.data ?? null
   const defaultLanguage = firstSiteLanguage(site)
@@ -72,10 +83,21 @@ export function PostEditorPage({
   const coverImageUrl = useWatch({ control: form.control, name: "coverImageUrl" })
   const selectedLanguage = useWatch({ control: form.control, name: "language" })
   const languageOptions = languageOptionsWithValue(site, selectedLanguage)
+  const translationLanguageOptions = useMemo(
+    () => (site?.languages ?? []).filter((language) => language.key !== editing?.language),
+    [editing?.language, site?.languages]
+  )
+  const canGenerateTranslations =
+    Boolean(editing) && selectedTranslationLanguages.length > 0 && translationLanguageOptions.length > 0
 
   useEffect(() => {
     form.reset(editing ? formFromPost(editing) : emptyPostForm(defaultLanguage))
   }, [defaultLanguage, editing, form])
+
+  useEffect(() => {
+    setSelectedTranslationLanguages(translationLanguageOptions.map((language) => language.key))
+    setOverwriteExistingTranslations(false)
+  }, [editing?.id, translationLanguageOptions])
 
   const saveMutation = useMutation({
     mutationFn: (values: PostFormValues) => {
@@ -105,11 +127,34 @@ export function PostEditorPage({
     onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
   })
 
+  const generateTranslationsMutation = useMutation({
+    mutationFn: () =>
+      api.generateTranslations(token, site?.id ?? "", editing?.id ?? "", {
+        languages: selectedTranslationLanguages,
+        overwrite_existing: overwriteExistingTranslations,
+      }),
+    onSuccess: async (response) => {
+      const created = response.results.filter((item) => item.action === "created").length
+      const updated = response.results.filter((item) => item.action === "updated").length
+      const skipped = response.results.filter((item) => item.action === "skipped").length
+      toast.success(t("posts.translationsGeneratedSummary", { created, updated, skipped }))
+      setTranslationDialogOpen(false)
+      await queryClient.invalidateQueries({ queryKey: ["posts", token, site?.id ?? null] })
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+  })
+
   function handleTitleChange(value: string) {
     form.setValue("title", value, { shouldDirty: true })
     if (!form.getValues("slug")) {
       form.setValue("slug", slugify(value), { shouldDirty: true })
     }
+  }
+
+  function toggleTranslationLanguage(language: string) {
+    setSelectedTranslationLanguages((current) =>
+      current.includes(language) ? current.filter((value) => value !== language) : [...current, language]
+    )
   }
 
   if (!site) {
@@ -132,6 +177,17 @@ export function PostEditorPage({
             <Button type="button" variant="outline" asChild>
               <Link to="/posts">{t("common.cancel")}</Link>
             </Button>
+            {editing ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={translationLanguageOptions.length === 0}
+                onClick={() => setTranslationDialogOpen(true)}
+              >
+                <Languages />
+                {t("posts.generateTranslations")}
+              </Button>
+            ) : null}
             <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? <Loader2 className="animate-spin" /> : <Save />}
               {t("common.save")}
@@ -255,6 +311,65 @@ export function PostEditorPage({
           />
         </CardContent>
       </Card>
+
+      <Dialog open={translationDialogOpen} onOpenChange={setTranslationDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("posts.generateTranslations")}</DialogTitle>
+            <DialogDescription>
+              {t("posts.generateTranslationsDescription", {
+                language: siteLanguageLabel(site, editing?.language ?? defaultLanguage),
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          {translationLanguageOptions.length ? (
+            <div className="space-y-4">
+              <Field label={t("posts.targetLanguages")} required>
+                <div className="flex flex-wrap gap-2">
+                  {translationLanguageOptions.map((language) => {
+                    const selected = selectedTranslationLanguages.includes(language.key)
+                    return (
+                      <Button
+                        key={language.key}
+                        type="button"
+                        size="sm"
+                        variant={selected ? "default" : "outline"}
+                        onClick={() => toggleTranslationLanguage(language.key)}
+                      >
+                        {language.label} ({language.key})
+                      </Button>
+                    )
+                  })}
+                </div>
+              </Field>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="size-4"
+                  checked={overwriteExistingTranslations}
+                  onChange={(event) => setOverwriteExistingTranslations(event.target.checked)}
+                />
+                <span>{t("posts.overwriteDraftTranslations")}</span>
+              </label>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("posts.noTranslationTargets")}</p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTranslationDialogOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!canGenerateTranslations || generateTranslationsMutation.isPending}
+              onClick={() => generateTranslationsMutation.mutate()}
+            >
+              {generateTranslationsMutation.isPending ? <Loader2 className="animate-spin" /> : <Languages />}
+              {t("posts.generateDrafts")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   )
 }

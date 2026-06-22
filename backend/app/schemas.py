@@ -172,6 +172,7 @@ class PostBase(BaseModel):
     meta_title: str | None = Field(default=None, max_length=255)
     meta_description: str | None = Field(default=None, max_length=500)
     canonical_url: str | None = Field(default=None, max_length=1000)
+    author_display_name: str | None = Field(default=None, max_length=160)
     category_id: str | None = None
 
 
@@ -191,6 +192,7 @@ class PostUpdate(BaseModel):
     meta_title: str | None = Field(default=None, max_length=255)
     meta_description: str | None = Field(default=None, max_length=500)
     canonical_url: str | None = Field(default=None, max_length=1000)
+    author_display_name: str | None = Field(default=None, max_length=160)
     category_id: str | None = None
 
 
@@ -239,10 +241,56 @@ class IntegrationPost(BaseModel):
     meta_title: str | None
     meta_description: str | None
     canonical_url: str | None
+    author_display_name: str | None
     published_at: datetime | None
     updated_at: datetime
     author: AuthorRead
     category: CategoryRead | None = None
+
+
+class ImportedPostUpsert(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    slug: str = Field(min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    language: str = Field(min_length=1, max_length=64, pattern=LANGUAGE_KEY_PATTERN)
+    html_content: str = Field(min_length=1)
+    markdown_content: str | None = None
+    excerpt: str | None = None
+    cover_image_url: str | None = Field(default=None, max_length=1000)
+    meta_title: str | None = Field(default=None, max_length=255)
+    meta_description: str | None = Field(default=None, max_length=500)
+    canonical_url: str | None = Field(default=None, max_length=1000)
+    author_display_name: str | None = Field(default=None, max_length=160)
+    category_id: str | None = None
+    status: Status = "draft"
+    published_at: datetime | None = None
+
+
+class TranslationGenerateRequest(BaseModel):
+    languages: list[str] = Field(min_length=1, max_length=50)
+    overwrite_existing: bool = False
+
+    @field_validator("languages")
+    @classmethod
+    def unique_languages(cls, languages: list[str]) -> list[str]:
+        normalized = [language.strip() for language in languages if language.strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Language keys must be unique")
+        if not normalized:
+            raise ValueError("At least one language is required")
+        return normalized
+
+
+class TranslationGenerateResult(BaseModel):
+    language: str
+    action: Literal["created", "updated", "skipped"]
+    reason: str | None = None
+    post_id: str | None = None
+
+
+class TranslationGenerateResponse(BaseModel):
+    source_post_id: str
+    source_language: str
+    results: list[TranslationGenerateResult]
 
 
 class UploadResponse(BaseModel):

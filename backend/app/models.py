@@ -107,6 +107,7 @@ class Post(TimestampMixin, Base):
     meta_title: Mapped[str | None] = mapped_column(String(255))
     meta_description: Mapped[str | None] = mapped_column(String(500))
     canonical_url: Mapped[str | None] = mapped_column(String(1000))
+    author_display_name: Mapped[str | None] = mapped_column(String(160))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     site: Mapped[Site] = relationship(back_populates="posts")

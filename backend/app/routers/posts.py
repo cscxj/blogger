@@ -5,10 +5,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
-from app.dependencies import require_user
+from app.dependencies import require_super_admin, require_user
 from app.db import get_db
-from app.markdown_render import render_markdown
+from app.markdown_render import render_markdown, sanitize_html_fragment
+from app.post_paths import localized_post_canonical_url
 from app.routers.sites import language_keys, owned_site_or_404
+from app.translation_service import TranslationSource, TranslationUnavailableError, translate_post
 
 router = APIRouter(prefix="/api/sites/{site_id}/posts", tags=["posts"])
 
@@ -55,6 +57,23 @@ def assert_language_belongs_to_site(site: models.Site, language: str | None) -> 
         return
     if language not in language_keys(site):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid language for site")
+
+
+def site_language_label(site: models.Site, language: str) -> str:
+    for item in site.languages or []:
+        if isinstance(item, dict) and item.get("key") == language:
+            return str(item.get("label") or language)
+    return language
+
+
+def post_by_language_and_slug(db: Session, site_id: str, language: str, slug: str) -> models.Post | None:
+    return db.execute(
+        select(models.Post).where(
+            models.Post.site_id == site_id,
+            models.Post.language == language,
+            models.Post.slug == slug,
+        )
+    ).scalar_one_or_none()
 
 
 def sync_publish_state(post: models.Post, status_value: str | None) -> None:
@@ -126,6 +145,50 @@ def create_post(
     return owned_post_or_404(db, site_id, post.id)
 
 
+@router.post("/import", response_model=schemas.PostRead)
+def import_post(
+    site_id: str,
+    payload: schemas.ImportedPostUpsert,
+    user: models.User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+) -> models.Post:
+    site = owned_site_or_404(db, user.id, site_id)
+    assert_language_belongs_to_site(site, payload.language)
+    assert_category_belongs_to_site(db, site_id, payload.category_id)
+
+    post = post_by_language_and_slug(db, site_id, payload.language, payload.slug)
+    if not post:
+        post = models.Post(
+            site_id=site_id,
+            language=payload.language,
+            slug=payload.slug,
+            author_id=user.id,
+        )
+
+    sanitized_html = sanitize_html_fragment(payload.html_content)
+    post.title = payload.title
+    post.language = payload.language
+    post.slug = payload.slug
+    post.markdown_content = payload.markdown_content or sanitized_html
+    post.html_content = sanitized_html
+    post.excerpt = payload.excerpt
+    post.cover_image_url = payload.cover_image_url
+    post.meta_title = payload.meta_title
+    post.meta_description = payload.meta_description
+    post.canonical_url = payload.canonical_url or localized_post_canonical_url(site, payload.language, payload.slug)
+    post.author_display_name = payload.author_display_name
+    post.category_id = payload.category_id
+    post.status = payload.status
+    if payload.status == "published":
+        post.published_at = payload.published_at or post.published_at or datetime.now(timezone.utc)
+    else:
+        post.published_at = None
+
+    db.add(post)
+    db.commit()
+    return owned_post_or_404(db, site_id, post.id)
+
+
 @router.get("/{post_id}", response_model=schemas.PostRead)
 def get_post(
     site_id: str,
@@ -135,6 +198,115 @@ def get_post(
 ) -> models.Post:
     owned_site_or_404(db, user.id, site_id)
     return owned_post_or_404(db, site_id, post_id)
+
+
+@router.post(
+    "/{post_id}/translations/generate",
+    response_model=schemas.TranslationGenerateResponse,
+)
+async def generate_translations(
+    site_id: str,
+    post_id: str,
+    payload: schemas.TranslationGenerateRequest,
+    user: models.User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+) -> schemas.TranslationGenerateResponse:
+    site = owned_site_or_404(db, user.id, site_id)
+    source_post = owned_post_or_404(db, site_id, post_id)
+
+    for language in payload.languages:
+        assert_language_belongs_to_site(site, language)
+
+    results: list[schemas.TranslationGenerateResult] = []
+
+    try:
+        for language in payload.languages:
+            if language == source_post.language:
+                results.append(
+                    schemas.TranslationGenerateResult(
+                        language=language,
+                        action="skipped",
+                        reason="same_as_source_language",
+                        post_id=source_post.id,
+                    )
+                )
+                continue
+
+            existing = post_by_language_and_slug(db, site_id, language, source_post.slug)
+            if existing and existing.status == "published":
+                results.append(
+                    schemas.TranslationGenerateResult(
+                        language=language,
+                        action="skipped",
+                        reason="published_translation_exists",
+                        post_id=existing.id,
+                    )
+                )
+                continue
+            if existing and not payload.overwrite_existing:
+                results.append(
+                    schemas.TranslationGenerateResult(
+                        language=language,
+                        action="skipped",
+                        reason="draft_translation_exists",
+                        post_id=existing.id,
+                    )
+                )
+                continue
+
+            translated = await translate_post(
+                TranslationSource(
+                    title=source_post.title,
+                    excerpt=source_post.excerpt,
+                    meta_title=source_post.meta_title,
+                    meta_description=source_post.meta_description,
+                    html_content=source_post.html_content,
+                    source_language=source_post.language,
+                    target_language=language,
+                    target_language_label=site_language_label(site, language),
+                )
+            )
+
+            post = existing or models.Post(
+                site_id=site_id,
+                language=language,
+                slug=source_post.slug,
+                author_id=source_post.author_id,
+            )
+            sanitized_html = sanitize_html_fragment(translated.html_content)
+            post.title = translated.title
+            post.language = language
+            post.slug = source_post.slug
+            post.status = "draft"
+            post.markdown_content = sanitized_html
+            post.html_content = sanitized_html
+            post.excerpt = translated.excerpt
+            post.cover_image_url = source_post.cover_image_url
+            post.meta_title = translated.meta_title
+            post.meta_description = translated.meta_description
+            post.canonical_url = localized_post_canonical_url(site, language, source_post.slug)
+            post.author_display_name = source_post.author_display_name
+            post.category_id = source_post.category_id
+            post.published_at = None
+            db.add(post)
+            db.flush()
+            results.append(
+                schemas.TranslationGenerateResult(
+                    language=language,
+                    action="updated" if existing else "created",
+                    post_id=post.id,
+                )
+            )
+    except TranslationUnavailableError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    db.commit()
+    return schemas.TranslationGenerateResponse(
+        source_post_id=source_post.id,
+        source_language=source_post.language,
+        results=results,
+    )
 
 
 @router.patch("/{post_id}", response_model=schemas.PostRead)

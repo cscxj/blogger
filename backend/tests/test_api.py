@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.translation_service import TranslationResult  # noqa: E402
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -25,7 +26,13 @@ PNG_1X1 = base64.b64decode(
 )
 
 
+def reset_db() -> None:
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+
 def test_blog_lifecycle_with_access_key() -> None:
+    reset_db()
     register = client.post(
         "/api/auth/register",
         json={
@@ -192,6 +199,7 @@ def test_blog_lifecycle_with_access_key() -> None:
     )
     assert public_custom_language_detail.status_code == 200, public_custom_language_detail.text
     assert public_custom_language_detail.json()["language"] == "zh-CN"
+    assert public_custom_language_detail.json()["path"] == "/zh-CN/blog/first-post"
     assert public_custom_language_detail.json()["title"] == "Chinese Post"
 
     upload = client.post(
@@ -263,3 +271,217 @@ def test_blog_lifecycle_with_access_key() -> None:
     users_response = client.get("/api/users", headers=jwt_headers)
     assert users_response.status_code == 200, users_response.text
     assert len(users_response.json()) >= 2
+
+
+def test_import_post_upsert_preserves_source_fields() -> None:
+    reset_db()
+    register = client.post(
+        "/api/auth/register",
+        json={
+            "email": "importer@example.com",
+            "password": "password123",
+            "nickname": "Importer",
+        },
+    )
+    assert register.status_code == 201, register.text
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    site_response = client.post(
+        "/api/sites",
+        json={
+            "name": "Import Site",
+            "slug": "import-site",
+            "base_url": "https://example.com",
+            "languages": [
+                {"key": "en", "label": "English"},
+                {"key": "zh-CN", "label": "中文"},
+            ],
+        },
+        headers=headers,
+    )
+    assert site_response.status_code == 201, site_response.text
+    site_id = site_response.json()["id"]
+
+    category_response = client.post(
+        f"/api/sites/{site_id}/categories",
+        json={"name": "Guides", "slug": "guides"},
+        headers=headers,
+    )
+    assert category_response.status_code == 201, category_response.text
+    category_id = category_response.json()["id"]
+
+    import_response = client.post(
+        f"/api/sites/{site_id}/posts/import",
+        json={
+            "title": "Imported Post",
+            "slug": "imported-post",
+            "language": "en",
+            "html_content": "<h1>Imported</h1><script>alert(1)</script><p>Body</p>",
+            "excerpt": "Imported excerpt",
+            "meta_title": "Imported meta title",
+            "meta_description": "Imported meta description",
+            "author_display_name": "Big Y",
+            "category_id": category_id,
+            "status": "published",
+            "published_at": "2024-01-02T03:04:05Z",
+        },
+        headers=headers,
+    )
+    assert import_response.status_code == 200, import_response.text
+    imported = import_response.json()
+    assert imported["title"] == "Imported Post"
+    assert imported["status"] == "published"
+    assert imported["author_display_name"] == "Big Y"
+    assert imported["canonical_url"] == "https://example.com/blog/imported-post"
+    assert imported["published_at"].startswith("2024-01-02T03:04:05")
+    assert "<script>" not in imported["html_content"]
+    assert "<script>" not in imported["markdown_content"]
+    imported_id = imported["id"]
+
+    update_response = client.post(
+        f"/api/sites/{site_id}/posts/import",
+        json={
+            "title": "Imported Post Updated",
+            "slug": "imported-post",
+            "language": "en",
+            "html_content": "<p>Updated body</p>",
+            "author_display_name": "Big Y",
+            "category_id": category_id,
+            "status": "draft",
+        },
+        headers=headers,
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()
+    assert updated["id"] == imported_id
+    assert updated["title"] == "Imported Post Updated"
+    assert updated["status"] == "draft"
+    assert updated["published_at"] is None
+
+
+def test_generate_translation_drafts(monkeypatch) -> None:
+    reset_db()
+    register = client.post(
+        "/api/auth/register",
+        json={
+            "email": "translator@example.com",
+            "password": "password123",
+            "nickname": "Translator",
+        },
+    )
+    assert register.status_code == 201, register.text
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    site_response = client.post(
+        "/api/sites",
+        json={
+            "name": "Translation Site",
+            "slug": "translation-site",
+            "base_url": "https://example.com",
+            "languages": [
+                {"key": "en", "label": "English"},
+                {"key": "zh-CN", "label": "中文"},
+                {"key": "fr", "label": "Francais"},
+            ],
+        },
+        headers=headers,
+    )
+    assert site_response.status_code == 201, site_response.text
+    site_id = site_response.json()["id"]
+
+    category_response = client.post(
+        f"/api/sites/{site_id}/categories",
+        json={"name": "News", "slug": "news"},
+        headers=headers,
+    )
+    assert category_response.status_code == 201, category_response.text
+    category_id = category_response.json()["id"]
+
+    source_response = client.post(
+        f"/api/sites/{site_id}/posts/import",
+        json={
+            "title": "Source Post",
+            "slug": "source-post",
+            "language": "en",
+            "html_content": "<h1>Source</h1><p>Source body</p>",
+            "excerpt": "Source excerpt",
+            "meta_title": "Source meta title",
+            "meta_description": "Source meta description",
+            "cover_image_url": "https://example.com/cover.png",
+            "author_display_name": "Big Y",
+            "category_id": category_id,
+            "status": "published",
+            "published_at": "2024-01-02T03:04:05Z",
+        },
+        headers=headers,
+    )
+    assert source_response.status_code == 200, source_response.text
+    source_post_id = source_response.json()["id"]
+
+    zh_existing = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "Old Chinese Draft",
+            "slug": "source-post",
+            "language": "zh-CN",
+            "markdown_content": "# Old Draft",
+        },
+        headers=headers,
+    )
+    assert zh_existing.status_code == 201, zh_existing.text
+    zh_existing_id = zh_existing.json()["id"]
+
+    fr_existing = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "French Published",
+            "slug": "source-post",
+            "language": "fr",
+            "markdown_content": "# Bonjour",
+        },
+        headers=headers,
+    )
+    assert fr_existing.status_code == 201, fr_existing.text
+    fr_existing_id = fr_existing.json()["id"]
+    fr_publish = client.post(f"/api/sites/{site_id}/posts/{fr_existing_id}/publish", headers=headers)
+    assert fr_publish.status_code == 200, fr_publish.text
+
+    calls: list[tuple[str, str]] = []
+
+    async def fake_translate(source):
+        calls.append((source.source_language, source.target_language))
+        return TranslationResult(
+            title=f"{source.target_language} title",
+            excerpt=f"{source.target_language} excerpt",
+            meta_title=f"{source.target_language} meta title",
+            meta_description=f"{source.target_language} meta description",
+            html_content=f"<p>{source.target_language} body</p><script>alert(1)</script>",
+        )
+
+    monkeypatch.setattr("app.routers.posts.translate_post", fake_translate)
+
+    generate_response = client.post(
+        f"/api/sites/{site_id}/posts/{source_post_id}/translations/generate",
+        json={"languages": ["zh-CN", "fr"], "overwrite_existing": True},
+        headers=headers,
+    )
+    assert generate_response.status_code == 200, generate_response.text
+    payload = generate_response.json()
+    assert payload["source_post_id"] == source_post_id
+    assert payload["results"] == [
+        {"language": "zh-CN", "action": "updated", "reason": None, "post_id": zh_existing_id},
+        {"language": "fr", "action": "skipped", "reason": "published_translation_exists", "post_id": fr_existing_id},
+    ]
+    assert calls == [("en", "zh-CN")]
+
+    zh_list = client.get(f"/api/sites/{site_id}/posts?language=zh-CN", headers=headers)
+    assert zh_list.status_code == 200, zh_list.text
+    zh_post = zh_list.json()["items"][0]
+    assert zh_post["id"] == zh_existing_id
+    assert zh_post["title"] == "zh-CN title"
+    assert zh_post["status"] == "draft"
+    assert zh_post["author_display_name"] == "Big Y"
+    assert zh_post["cover_image_url"] == "https://example.com/cover.png"
+    assert zh_post["canonical_url"] == "https://example.com/zh-CN/blog/source-post"
+    assert "<script>" not in zh_post["html_content"]
+    assert "<script>" not in zh_post["markdown_content"]

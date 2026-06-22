@@ -81,6 +81,7 @@ export type Post = {
   meta_title: string | null
   meta_description: string | null
   canonical_url: string | null
+  author_display_name: string | null
   category_id: string | null
   published_at: string | null
   created_at: string
@@ -116,4 +117,22 @@ export type PostListParams = {
   q?: string
   limit?: number
   offset?: number
+}
+
+export type TranslationGeneratePayload = {
+  languages: string[]
+  overwrite_existing?: boolean
+}
+
+export type TranslationGenerateResult = {
+  language: string
+  action: "created" | "updated" | "skipped"
+  reason: string | null
+  post_id: string | null
+}
+
+export type TranslationGenerateResponse = {
+  source_post_id: string
+  source_language: string
+  results: TranslationGenerateResult[]
 }

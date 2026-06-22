@@ -55,8 +55,12 @@ def render_markdown(markdown_text: str) -> str:
         extensions=["extra", "sane_lists", "toc"],
         output_format="html5",
     )
+    return sanitize_html_fragment(raw_html)
+
+
+def sanitize_html_fragment(html_text: str) -> str:
     return bleach.clean(
-        raw_html,
+        html_text or "",
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
         protocols=["http", "https", "mailto"],

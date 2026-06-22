@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import models, schemas
 from app.dependencies import Principal, get_current_principal
 from app.db import get_db
+from app.post_paths import default_language_key, localized_post_path
 from app.routers.sites import language_keys
 
 router = APIRouter(prefix="/api/integration", tags=["integration"])
@@ -26,25 +27,19 @@ def integration_post(site: models.Site, post: models.Post) -> schemas.Integratio
         title=post.title,
         slug=post.slug,
         language=post.language,
-        path=f"/blog/{post.slug}",
+        path=localized_post_path(site, post.language, post.slug),
         html_content=post.html_content,
         excerpt=post.excerpt,
         cover_image_url=post.cover_image_url,
         meta_title=post.meta_title,
         meta_description=post.meta_description,
         canonical_url=post.canonical_url,
+        author_display_name=post.author_display_name,
         published_at=post.published_at,
         updated_at=post.updated_at,
         author=post.author,
         category=post.category,
     )
-
-
-def default_language_key(site: models.Site) -> str | None:
-    for language in site.languages or []:
-        if isinstance(language, dict) and language.get("key"):
-            return str(language["key"])
-    return None
 
 
 def assert_language_belongs_to_site(site: models.Site, language: str | None) -> None:

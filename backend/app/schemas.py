@@ -265,6 +265,21 @@ class ImportedPostUpsert(BaseModel):
     published_at: datetime | None = None
 
 
+class TranslationTemplateArticleInput(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    slug: str = Field(min_length=1, max_length=160, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    language: str = Field(min_length=1, max_length=64, pattern=LANGUAGE_KEY_PATTERN)
+    html_content: str = Field(min_length=1)
+    markdown_content: str | None = Field(default=None, min_length=1)
+    excerpt: str | None = None
+    cover_image_url: str | None = Field(default=None, max_length=1000)
+    meta_title: str | None = Field(default=None, max_length=255)
+    meta_description: str | None = Field(default=None, max_length=500)
+    canonical_url: str | None = Field(default=None, max_length=1000)
+    author_display_name: str | None = Field(default=None, max_length=160)
+    category_id: str | None = None
+
+
 class TranslationGenerateRequest(BaseModel):
     languages: list[str] = Field(min_length=1, max_length=50)
     overwrite_existing: bool = False
@@ -277,6 +292,20 @@ class TranslationGenerateRequest(BaseModel):
             raise ValueError("Language keys must be unique")
         if not normalized:
             raise ValueError("At least one language is required")
+        return normalized
+
+
+class TranslationGenerateFromArticleRequest(BaseModel):
+    article: TranslationTemplateArticleInput
+    languages: list[str] = Field(default_factory=list, max_length=50)
+    overwrite_existing: bool = False
+
+    @field_validator("languages")
+    @classmethod
+    def unique_languages(cls, languages: list[str]) -> list[str]:
+        normalized = [language.strip() for language in languages if language.strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Language keys must be unique")
         return normalized
 
 

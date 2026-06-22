@@ -626,3 +626,154 @@ def test_generate_and_publish_translations_requires_access_key(monkeypatch) -> N
     assert zh_post["canonical_url"] == "https://example.com/zh-CN/blog/external-source-post"
     assert "<script>" not in zh_post["html_content"]
     assert "<script>" not in zh_post["markdown_content"]
+
+
+def test_generate_and_publish_translations_from_template_article_requires_access_key(monkeypatch) -> None:
+    reset_db()
+    register = client.post(
+        "/api/auth/register",
+        json={
+            "email": "template-publisher@example.com",
+            "password": "password123",
+            "nickname": "Template Publisher",
+        },
+    )
+    assert register.status_code == 201, register.text
+    jwt_headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    key_response = client.post("/api/access-keys", json={"name": "external-template"}, headers=jwt_headers)
+    assert key_response.status_code == 201, key_response.text
+    access_key = key_response.json()["access_key"]
+    key_headers = {"Authorization": f"Bearer {access_key}"}
+
+    site_response = client.post(
+        "/api/sites",
+        json={
+            "name": "Template Translation Site",
+            "slug": "template-translation-site",
+            "base_url": "https://example.com",
+            "languages": [
+                {"key": "en", "label": "English"},
+                {"key": "zh-CN", "label": "中文"},
+                {"key": "fr", "label": "Francais"},
+            ],
+        },
+        headers=jwt_headers,
+    )
+    assert site_response.status_code == 201, site_response.text
+    site_id = site_response.json()["id"]
+
+    category_response = client.post(
+        f"/api/sites/{site_id}/categories",
+        json={"name": "Ops", "slug": "ops"},
+        headers=jwt_headers,
+    )
+    assert category_response.status_code == 201, category_response.text
+    category_id = category_response.json()["id"]
+
+    zh_existing = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "Old Chinese Draft",
+            "slug": "template-source-post",
+            "language": "zh-CN",
+            "markdown_content": "# Old Draft",
+        },
+        headers=jwt_headers,
+    )
+    assert zh_existing.status_code == 201, zh_existing.text
+    zh_existing_id = zh_existing.json()["id"]
+
+    fr_existing = client.post(
+        f"/api/sites/{site_id}/posts",
+        json={
+            "title": "French Published",
+            "slug": "template-source-post",
+            "language": "fr",
+            "markdown_content": "# Bonjour",
+        },
+        headers=jwt_headers,
+    )
+    assert fr_existing.status_code == 201, fr_existing.text
+    fr_existing_id = fr_existing.json()["id"]
+    fr_publish = client.post(f"/api/sites/{site_id}/posts/{fr_existing_id}/publish", headers=jwt_headers)
+    assert fr_publish.status_code == 200, fr_publish.text
+
+    calls: list[tuple[str, str]] = []
+
+    async def fake_translate(source):
+        calls.append((source.source_language, source.target_language))
+        return TranslationResult(
+            title=f"{source.target_language} title",
+            excerpt=f"{source.target_language} excerpt",
+            meta_title=f"{source.target_language} meta title",
+            meta_description=f"{source.target_language} meta description",
+            html_content=f"<p>{source.target_language} body</p><script>alert(1)</script>",
+        )
+
+    monkeypatch.setattr("app.routers.posts.translate_post", fake_translate)
+
+    request_body = {
+        "article": {
+            "title": "Template Source Post",
+            "slug": "template-source-post",
+            "language": "en",
+            "html_content": "<h1>Source</h1><p>Source body</p><script>alert(1)</script>",
+            "excerpt": "Source excerpt",
+            "meta_title": "Source meta title",
+            "meta_description": "Source meta description",
+            "cover_image_url": "https://example.com/cover.png",
+            "author_display_name": "Big Y",
+            "category_id": category_id,
+        },
+        "overwrite_existing": True,
+    }
+
+    jwt_forbidden = client.post(
+        f"/api/sites/{site_id}/posts/translations/generate-and-publish",
+        json=request_body,
+        headers=jwt_headers,
+    )
+    assert jwt_forbidden.status_code == 401, jwt_forbidden.text
+    assert jwt_forbidden.json()["detail"] == "Access key required"
+
+    generate_response = client.post(
+        f"/api/sites/{site_id}/posts/translations/generate-and-publish",
+        json=request_body,
+        headers=key_headers,
+    )
+    assert generate_response.status_code == 200, generate_response.text
+    payload = generate_response.json()
+    source_post_id = payload["source_post_id"]
+    assert payload["source_language"] == "en"
+    assert payload["results"] == [
+        {"language": "en", "action": "created", "reason": None, "post_id": source_post_id, "status": "published"},
+        {"language": "zh-CN", "action": "updated", "reason": None, "post_id": zh_existing_id, "status": "published"},
+        {"language": "fr", "action": "updated", "reason": None, "post_id": fr_existing_id, "status": "published"},
+    ]
+    assert calls == [("en", "zh-CN"), ("en", "fr")]
+
+    en_list = client.get(f"/api/sites/{site_id}/posts?language=en", headers=key_headers)
+    assert en_list.status_code == 200, en_list.text
+    en_post = en_list.json()["items"][0]
+    assert en_post["id"] == source_post_id
+    assert en_post["status"] == "published"
+    assert en_post["canonical_url"] == "https://example.com/blog/template-source-post"
+    assert "<script>" not in en_post["html_content"]
+
+    zh_list = client.get(f"/api/sites/{site_id}/posts?language=zh-CN", headers=key_headers)
+    assert zh_list.status_code == 200, zh_list.text
+    zh_post = zh_list.json()["items"][0]
+    assert zh_post["id"] == zh_existing_id
+    assert zh_post["title"] == "zh-CN title"
+    assert zh_post["status"] == "published"
+    assert zh_post["canonical_url"] == "https://example.com/zh-CN/blog/template-source-post"
+    assert "<script>" not in zh_post["html_content"]
+    assert "<script>" not in zh_post["markdown_content"]
+
+    fr_list = client.get(f"/api/sites/{site_id}/posts?language=fr", headers=key_headers)
+    assert fr_list.status_code == 200, fr_list.text
+    fr_post = fr_list.json()["items"][0]
+    assert fr_post["id"] == fr_existing_id
+    assert fr_post["title"] == "fr title"
+    assert fr_post["status"] == "published"

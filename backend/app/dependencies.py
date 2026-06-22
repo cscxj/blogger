@@ -71,3 +71,15 @@ def require_super_admin(user: models.User = Depends(require_user)) -> models.Use
     if user.role != "super_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin role required")
     return user
+
+
+def require_access_key_principal(principal: Principal = Depends(get_current_principal)) -> Principal:
+    if principal.auth_type != "access_key":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Access key required")
+    return principal
+
+
+def require_super_admin_access_key(principal: Principal = Depends(require_access_key_principal)) -> models.User:
+    if principal.user.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Super admin role required")
+    return principal.user

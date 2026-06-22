@@ -293,5 +293,15 @@ class TranslationGenerateResponse(BaseModel):
     results: list[TranslationGenerateResult]
 
 
+class TranslationGeneratePublishResult(TranslationGenerateResult):
+    status: Status | None = None
+
+
+class TranslationGeneratePublishResponse(BaseModel):
+    source_post_id: str
+    source_language: str
+    results: list[TranslationGeneratePublishResult]
+
+
 class UploadResponse(BaseModel):
     url: str

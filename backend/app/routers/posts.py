@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
-from app.dependencies import require_super_admin, require_user
+from app.dependencies import require_super_admin, require_super_admin_access_key, require_user
 from app.db import get_db
 from app.markdown_render import render_markdown, sanitize_html_fragment
 from app.post_paths import localized_post_canonical_url
@@ -81,6 +81,101 @@ def sync_publish_state(post: models.Post, status_value: str | None) -> None:
         post.published_at = datetime.now(timezone.utc)
     if status_value == "draft":
         post.published_at = None
+
+
+async def _generate_translation_results(
+    db: Session,
+    site: models.Site,
+    source_post: models.Post,
+    payload: schemas.TranslationGenerateRequest,
+    *,
+    publish_generated: bool,
+) -> list[schemas.TranslationGeneratePublishResult]:
+    results: list[schemas.TranslationGeneratePublishResult] = []
+
+    for language in payload.languages:
+        if language == source_post.language:
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=language,
+                    action="skipped",
+                    reason="same_as_source_language",
+                    post_id=source_post.id,
+                    status=source_post.status,
+                )
+            )
+            continue
+
+        existing = post_by_language_and_slug(db, site.id, language, source_post.slug)
+        if existing and existing.status == "published":
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=language,
+                    action="skipped",
+                    reason="published_translation_exists",
+                    post_id=existing.id,
+                    status=existing.status,
+                )
+            )
+            continue
+        if existing and not payload.overwrite_existing:
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=language,
+                    action="skipped",
+                    reason="draft_translation_exists",
+                    post_id=existing.id,
+                    status=existing.status,
+                )
+            )
+            continue
+
+        translated = await translate_post(
+            TranslationSource(
+                title=source_post.title,
+                excerpt=source_post.excerpt,
+                meta_title=source_post.meta_title,
+                meta_description=source_post.meta_description,
+                html_content=source_post.html_content,
+                source_language=source_post.language,
+                target_language=language,
+                target_language_label=site_language_label(site, language),
+            )
+        )
+
+        post = existing or models.Post(
+            site_id=site.id,
+            language=language,
+            slug=source_post.slug,
+            author_id=source_post.author_id,
+        )
+        sanitized_html = sanitize_html_fragment(translated.html_content)
+        post.title = translated.title
+        post.language = language
+        post.slug = source_post.slug
+        post.status = "published" if publish_generated else "draft"
+        post.markdown_content = sanitized_html
+        post.html_content = sanitized_html
+        post.excerpt = translated.excerpt
+        post.cover_image_url = source_post.cover_image_url
+        post.meta_title = translated.meta_title
+        post.meta_description = translated.meta_description
+        post.canonical_url = localized_post_canonical_url(site, language, source_post.slug)
+        post.author_display_name = source_post.author_display_name
+        post.category_id = source_post.category_id
+        sync_publish_state(post, post.status)
+        db.add(post)
+        db.flush()
+        results.append(
+            schemas.TranslationGeneratePublishResult(
+                language=language,
+                action="updated" if existing else "created",
+                post_id=post.id,
+                status=post.status,
+            )
+        )
+
+    return results
 
 
 @router.get("", response_model=schemas.PostListResponse)
@@ -217,92 +312,57 @@ async def generate_translations(
     for language in payload.languages:
         assert_language_belongs_to_site(site, language)
 
-    results: list[schemas.TranslationGenerateResult] = []
-
     try:
-        for language in payload.languages:
-            if language == source_post.language:
-                results.append(
-                    schemas.TranslationGenerateResult(
-                        language=language,
-                        action="skipped",
-                        reason="same_as_source_language",
-                        post_id=source_post.id,
-                    )
-                )
-                continue
-
-            existing = post_by_language_and_slug(db, site_id, language, source_post.slug)
-            if existing and existing.status == "published":
-                results.append(
-                    schemas.TranslationGenerateResult(
-                        language=language,
-                        action="skipped",
-                        reason="published_translation_exists",
-                        post_id=existing.id,
-                    )
-                )
-                continue
-            if existing and not payload.overwrite_existing:
-                results.append(
-                    schemas.TranslationGenerateResult(
-                        language=language,
-                        action="skipped",
-                        reason="draft_translation_exists",
-                        post_id=existing.id,
-                    )
-                )
-                continue
-
-            translated = await translate_post(
-                TranslationSource(
-                    title=source_post.title,
-                    excerpt=source_post.excerpt,
-                    meta_title=source_post.meta_title,
-                    meta_description=source_post.meta_description,
-                    html_content=source_post.html_content,
-                    source_language=source_post.language,
-                    target_language=language,
-                    target_language_label=site_language_label(site, language),
-                )
-            )
-
-            post = existing or models.Post(
-                site_id=site_id,
-                language=language,
-                slug=source_post.slug,
-                author_id=source_post.author_id,
-            )
-            sanitized_html = sanitize_html_fragment(translated.html_content)
-            post.title = translated.title
-            post.language = language
-            post.slug = source_post.slug
-            post.status = "draft"
-            post.markdown_content = sanitized_html
-            post.html_content = sanitized_html
-            post.excerpt = translated.excerpt
-            post.cover_image_url = source_post.cover_image_url
-            post.meta_title = translated.meta_title
-            post.meta_description = translated.meta_description
-            post.canonical_url = localized_post_canonical_url(site, language, source_post.slug)
-            post.author_display_name = source_post.author_display_name
-            post.category_id = source_post.category_id
-            post.published_at = None
-            db.add(post)
-            db.flush()
-            results.append(
-                schemas.TranslationGenerateResult(
-                    language=language,
-                    action="updated" if existing else "created",
-                    post_id=post.id,
-                )
-            )
+        results = await _generate_translation_results(
+            db,
+            site,
+            source_post,
+            payload,
+            publish_generated=False,
+        )
     except TranslationUnavailableError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
     db.commit()
     return schemas.TranslationGenerateResponse(
+        source_post_id=source_post.id,
+        source_language=source_post.language,
+        results=results,
+    )
+
+
+@router.post(
+    "/{post_id}/translations/generate-and-publish",
+    response_model=schemas.TranslationGeneratePublishResponse,
+)
+async def generate_and_publish_translations(
+    site_id: str,
+    post_id: str,
+    payload: schemas.TranslationGenerateRequest,
+    user: models.User = Depends(require_super_admin_access_key),
+    db: Session = Depends(get_db),
+) -> schemas.TranslationGeneratePublishResponse:
+    site = owned_site_or_404(db, user.id, site_id)
+    source_post = owned_post_or_404(db, site_id, post_id)
+
+    for language in payload.languages:
+        assert_language_belongs_to_site(site, language)
+
+    try:
+        results = await _generate_translation_results(
+            db,
+            site,
+            source_post,
+            payload,
+            publish_generated=True,
+        )
+    except TranslationUnavailableError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    db.commit()
+    return schemas.TranslationGeneratePublishResponse(
         source_post_id=source_post.id,
         source_language=source_post.language,
         results=results,

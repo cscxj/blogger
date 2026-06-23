@@ -187,7 +187,7 @@ def _load_model(name: str, raw: str, model: type[ModelT]) -> ModelT:
         raise TranslationUnavailableError(f"{name} payload validation failed: {exc}") from exc
 
 
-async def _request_translation_json(
+def _request_translation_json(
     *,
     system_prompt: str,
     user_payload: dict[str, object],
@@ -214,8 +214,8 @@ async def _request_translation_json(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=settings.translation_timeout_seconds) as client:
-            response = await client.post(_endpoint(settings.translation_api_base_url), headers=headers, json=payload)
+        with httpx.Client(timeout=settings.translation_timeout_seconds) as client:
+            response = client.post(_endpoint(settings.translation_api_base_url), headers=headers, json=payload)
             response.raise_for_status()
     except httpx.HTTPError as exc:
         raise TranslationUnavailableError(f"Translation request failed: {exc}") from exc
@@ -270,8 +270,8 @@ def _split_html_into_chunks(html_content: str) -> list[str]:
     return chunks or [html_content]
 
 
-async def _translate_metadata(source: TranslationSource) -> TranslationMetadataResult:
-    response = await _request_translation_json(
+def _translate_metadata(source: TranslationSource) -> TranslationMetadataResult:
+    response = _request_translation_json(
         system_prompt=_metadata_system_prompt(),
         user_payload={
             "task": "Translate the article metadata into the target language.",
@@ -293,7 +293,7 @@ async def _translate_metadata(source: TranslationSource) -> TranslationMetadataR
     return _load_model("Translation metadata", json.dumps(response, ensure_ascii=False), TranslationMetadataResult)
 
 
-async def _translate_html_chunk(
+def _translate_html_chunk(
     source: TranslationSource,
     html_chunk: str,
     *,
@@ -301,7 +301,7 @@ async def _translate_html_chunk(
     chunk_total: int,
     translated_title: str,
 ) -> TranslationHtmlChunkResult:
-    response = await _request_translation_json(
+    response = _request_translation_json(
         system_prompt=_html_chunk_system_prompt(),
         user_payload={
             "task": "Translate this HTML fragment into the target language.",
@@ -325,8 +325,8 @@ async def _translate_html_chunk(
     return _load_model("Translation html fragment", json.dumps(response, ensure_ascii=False), TranslationHtmlChunkResult)
 
 
-async def _translate_post_single(source: TranslationSource) -> TranslationResult:
-    response = await _request_translation_json(
+def _translate_post_single(source: TranslationSource) -> TranslationResult:
+    response = _request_translation_json(
         system_prompt=_system_prompt(),
         user_payload={
             "task": "Translate this blog post into the target language as a draft article.",
@@ -351,15 +351,15 @@ async def _translate_post_single(source: TranslationSource) -> TranslationResult
     return _load_model("Translation", json.dumps(response, ensure_ascii=False), TranslationResult)
 
 
-async def translate_post(source: TranslationSource) -> TranslationResult:
+def translate_post(source: TranslationSource) -> TranslationResult:
     html_chunks = _split_html_into_chunks(source.html_content)
     if len(html_chunks) == 1 and len(source.html_content) <= _SINGLE_REQUEST_HTML_THRESHOLD:
-        return await _translate_post_single(source)
+        return _translate_post_single(source)
 
-    metadata = await _translate_metadata(source)
+    metadata = _translate_metadata(source)
     translated_html_chunks: list[str] = []
     for index, html_chunk in enumerate(html_chunks, start=1):
-        translated_chunk = await _translate_html_chunk(
+        translated_chunk = _translate_html_chunk(
             source,
             html_chunk,
             chunk_index=index,

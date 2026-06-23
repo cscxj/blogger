@@ -149,7 +149,7 @@ def publish_posts(
             result.status = "published"
 
 
-async def _generate_translation_results(
+def _generate_translation_results(
     db: Session,
     site: models.Site,
     source_article: schemas.TranslationTemplateArticleInput,
@@ -200,7 +200,7 @@ async def _generate_translation_results(
             )
             continue
 
-        translated = await translate_post(
+        translated = translate_post(
             TranslationSource(
                 title=source_article.title,
                 excerpt=source_article.excerpt,
@@ -370,7 +370,7 @@ def get_post(
     "/translations/generate-and-publish",
     response_model=schemas.TranslationGeneratePublishResponse,
 )
-async def generate_and_publish_translations_from_article(
+def generate_and_publish_translations_from_article(
     site_id: str,
     payload: schemas.TranslationGenerateFromArticleRequest,
     user: models.User = Depends(require_super_admin_access_key),
@@ -390,7 +390,7 @@ async def generate_and_publish_translations_from_article(
     try:
         source_post, source_action = upsert_template_article_post(db, site, article, author_id=user.id)
         if target_languages:
-            translation_results, changed_posts = await _generate_translation_results(
+            translation_results, changed_posts = _generate_translation_results(
                 db,
                 site,
                 article,
@@ -429,7 +429,7 @@ async def generate_and_publish_translations_from_article(
     "/{post_id}/translations/generate",
     response_model=schemas.TranslationGenerateResponse,
 )
-async def generate_translations(
+def generate_translations(
     site_id: str,
     post_id: str,
     payload: schemas.TranslationGenerateRequest,
@@ -444,7 +444,7 @@ async def generate_translations(
         assert_language_belongs_to_site(site, language)
 
     try:
-        results, _ = await _generate_translation_results(
+        results, _ = _generate_translation_results(
             db,
             site,
             source_article,
@@ -478,7 +478,7 @@ async def generate_translations(
     "/{post_id}/translations/generate-and-publish",
     response_model=schemas.TranslationGeneratePublishResponse,
 )
-async def generate_and_publish_translations(
+def generate_and_publish_translations(
     site_id: str,
     post_id: str,
     payload: schemas.TranslationGenerateRequest,
@@ -493,7 +493,7 @@ async def generate_and_publish_translations(
         assert_language_belongs_to_site(site, language)
 
     try:
-        results, changed_posts = await _generate_translation_results(
+        results, changed_posts = _generate_translation_results(
             db,
             site,
             source_article,

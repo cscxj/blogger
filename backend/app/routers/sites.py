@@ -56,13 +56,13 @@ def list_sites(
 
 
 @router.post("", response_model=schemas.SiteRead, status_code=status.HTTP_201_CREATED)
-async def create_site(
+def create_site(
     payload: schemas.SiteCreate,
     user: models.User = Depends(require_super_admin),
     db: Session = Depends(get_db),
 ) -> models.Site:
     assert_site_slug_available(db, user.id, payload.slug)
-    site = models.Site(owner_id=user.id, **payload.model_dump(), icon_url=await fetch_site_icon(payload.base_url))
+    site = models.Site(owner_id=user.id, **payload.model_dump(), icon_url=fetch_site_icon(payload.base_url))
     db.add(site)
     db.commit()
     db.refresh(site)
@@ -79,7 +79,7 @@ def get_site(
 
 
 @router.patch("/{site_id}", response_model=schemas.SiteRead)
-async def update_site(
+def update_site(
     site_id: str,
     payload: schemas.SiteUpdate,
     user: models.User = Depends(require_super_admin),
@@ -94,7 +94,7 @@ async def update_site(
     for field, value in data.items():
         setattr(site, field, value)
     if "base_url" in data:
-        site.icon_url = await fetch_site_icon(site.base_url)
+        site.icon_url = fetch_site_icon(site.base_url)
     db.add(site)
     db.commit()
     db.refresh(site)

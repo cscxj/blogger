@@ -72,8 +72,8 @@ def _safe_kind(kind: str) -> str:
     return kind
 
 
-async def store_upload(file: UploadFile, kind: str, user_id: str) -> StoredFile:
-    data = await file.read()
+def store_upload(file: UploadFile, kind: str, user_id: str) -> StoredFile:
+    data = file.file.read()
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty upload")
     if len(data) > 5 * 1024 * 1024:

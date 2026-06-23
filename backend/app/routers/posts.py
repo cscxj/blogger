@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,9 +11,29 @@ from app.db import get_db
 from app.markdown_render import render_markdown, sanitize_html_fragment
 from app.post_paths import localized_post_canonical_url
 from app.routers.sites import language_keys, owned_site_or_404
-from app.translation_service import TranslationSource, TranslationUnavailableError, translate_post
+from app.translation_service import (
+    TranslationResult as GeneratedTranslationResult,
+    TranslationSource,
+    TranslationUnavailableError,
+    translate_post,
+)
 
 router = APIRouter(prefix="/api/sites/{site_id}/posts", tags=["posts"])
+
+
+@dataclass(frozen=True)
+class TranslationWorkItem:
+    language: str
+    target_language_label: str
+    skip_reason: str | None = None
+    post_id: str | None = None
+    status: schemas.Status | None = None
+
+
+@dataclass(frozen=True)
+class TranslationOptions:
+    languages: list[str]
+    overwrite_existing: bool
 
 
 def owned_post_or_404(db: Session, site_id: str, post_id: str) -> models.Post:
@@ -149,27 +170,25 @@ def publish_posts(
             result.status = "published"
 
 
-def _generate_translation_results(
+def _plan_translation_work(
     db: Session,
     site: models.Site,
     source_article: schemas.TranslationTemplateArticleInput,
     *,
-    author_id: str,
     source_post_id: str | None,
     source_status: schemas.Status,
-    payload: schemas.TranslationGenerateRequest,
+    options: TranslationOptions,
     allow_overwrite_published: bool,
-) -> tuple[list[schemas.TranslationGeneratePublishResult], list[models.Post]]:
-    results: list[schemas.TranslationGeneratePublishResult] = []
-    changed_posts: list[models.Post] = []
+) -> list[TranslationWorkItem]:
+    work_items: list[TranslationWorkItem] = []
 
-    for language in payload.languages:
+    for language in options.languages:
         if language == source_article.language:
-            results.append(
-                schemas.TranslationGeneratePublishResult(
+            work_items.append(
+                TranslationWorkItem(
                     language=language,
-                    action="skipped",
-                    reason="same_as_source_language",
+                    target_language_label=site_language_label(site, language),
+                    skip_reason="same_as_source_language",
                     post_id=source_post_id,
                     status=source_status,
                 )
@@ -177,27 +196,53 @@ def _generate_translation_results(
             continue
 
         existing = post_by_language_and_slug(db, site.id, language, source_article.slug)
-        if existing and existing.status == "published" and (not allow_overwrite_published or not payload.overwrite_existing):
-            results.append(
-                schemas.TranslationGeneratePublishResult(
+        if existing and existing.status == "published" and (not allow_overwrite_published or not options.overwrite_existing):
+            work_items.append(
+                TranslationWorkItem(
                     language=language,
-                    action="skipped",
-                    reason="published_translation_exists",
+                    target_language_label=site_language_label(site, language),
+                    skip_reason="published_translation_exists",
                     post_id=existing.id,
                     status=existing.status,
                 )
             )
             continue
-        if existing and not payload.overwrite_existing:
-            results.append(
-                schemas.TranslationGeneratePublishResult(
+        if existing and not options.overwrite_existing:
+            work_items.append(
+                TranslationWorkItem(
                     language=language,
-                    action="skipped",
-                    reason="draft_translation_exists",
+                    target_language_label=site_language_label(site, language),
+                    skip_reason="draft_translation_exists",
                     post_id=existing.id,
                     status=existing.status,
                 )
             )
+            continue
+
+        work_items.append(
+            TranslationWorkItem(
+                language=language,
+                target_language_label=site_language_label(site, language),
+            )
+        )
+
+    return work_items
+
+
+def _end_transaction(db: Session) -> None:
+    if db.in_transaction():
+        db.rollback()
+
+
+def _translate_work_items(
+    source_article: schemas.TranslationTemplateArticleInput,
+    work_items: list[TranslationWorkItem],
+) -> dict[str, GeneratedTranslationResult]:
+    translated_by_language: dict[str, GeneratedTranslationResult] = {}
+    sanitized_source_html = sanitize_html_fragment(source_article.html_content)
+
+    for item in work_items:
+        if item.skip_reason:
             continue
 
         translated = translate_post(
@@ -206,22 +251,79 @@ def _generate_translation_results(
                 excerpt=source_article.excerpt,
                 meta_title=source_article.meta_title,
                 meta_description=source_article.meta_description,
-                html_content=sanitize_html_fragment(source_article.html_content),
+                html_content=sanitized_source_html,
                 source_language=source_article.language,
-                target_language=language,
-                target_language_label=site_language_label(site, language),
+                target_language=item.language,
+                target_language_label=item.target_language_label,
             )
         )
 
+        translated_by_language[item.language] = translated
+
+    return translated_by_language
+
+
+def _apply_generated_translations(
+    db: Session,
+    site: models.Site,
+    source_article: schemas.TranslationTemplateArticleInput,
+    *,
+    author_id: str,
+    options: TranslationOptions,
+    allow_overwrite_published: bool,
+    work_items: list[TranslationWorkItem],
+    translated_by_language: dict[str, GeneratedTranslationResult],
+) -> tuple[list[schemas.TranslationGeneratePublishResult], list[models.Post]]:
+    results: list[schemas.TranslationGeneratePublishResult] = []
+    changed_posts: list[models.Post] = []
+
+    for item in work_items:
+        if item.skip_reason:
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=item.language,
+                    action="skipped",
+                    reason=item.skip_reason,
+                    post_id=item.post_id,
+                    status=item.status,
+                )
+            )
+            continue
+
+        existing = post_by_language_and_slug(db, site.id, item.language, source_article.slug)
+        if existing and existing.status == "published" and (not allow_overwrite_published or not options.overwrite_existing):
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=item.language,
+                    action="skipped",
+                    reason="published_translation_exists",
+                    post_id=existing.id,
+                    status=existing.status,
+                )
+            )
+            continue
+        if existing and not options.overwrite_existing:
+            results.append(
+                schemas.TranslationGeneratePublishResult(
+                    language=item.language,
+                    action="skipped",
+                    reason="draft_translation_exists",
+                    post_id=existing.id,
+                    status=existing.status,
+                )
+            )
+            continue
+
+        translated = translated_by_language[item.language]
         post = existing or models.Post(
             site_id=site.id,
-            language=language,
+            language=item.language,
             slug=source_article.slug,
             author_id=author_id,
         )
         sanitized_html = sanitize_html_fragment(translated.html_content)
         post.title = translated.title
-        post.language = language
+        post.language = item.language
         post.slug = source_article.slug
         post.status = "draft"
         post.markdown_content = sanitized_html
@@ -230,7 +332,7 @@ def _generate_translation_results(
         post.cover_image_url = source_article.cover_image_url
         post.meta_title = translated.meta_title
         post.meta_description = translated.meta_description
-        post.canonical_url = localized_post_canonical_url(site, language, source_article.slug)
+        post.canonical_url = localized_post_canonical_url(site, item.language, source_article.slug)
         post.author_display_name = source_article.author_display_name
         post.category_id = source_article.category_id
         sync_publish_state(post, post.status)
@@ -239,7 +341,7 @@ def _generate_translation_results(
         changed_posts.append(post)
         results.append(
             schemas.TranslationGeneratePublishResult(
-                language=language,
+                language=item.language,
                 action="updated" if existing else "created",
                 post_id=post.id,
                 status=post.status,
@@ -386,25 +488,37 @@ def generate_and_publish_translations_from_article(
 
     requested_languages = payload.languages or [language for language in language_keys(site) if language != article.language]
     target_languages = [language for language in requested_languages if language != article.language]
+    translation_options = TranslationOptions(languages=target_languages, overwrite_existing=payload.overwrite_existing)
 
     try:
+        work_items = _plan_translation_work(
+            db,
+            site,
+            article,
+            source_post_id=None,
+            source_status="draft",
+            options=translation_options,
+            allow_overwrite_published=True,
+        )
+        _end_transaction(db)
+        translated_by_language = _translate_work_items(article, work_items)
+
+        site = owned_site_or_404(db, user.id, site_id)
+        assert_category_belongs_to_site(db, site_id, article.category_id)
+        for language in target_languages:
+            assert_language_belongs_to_site(site, language)
+
         source_post, source_action = upsert_template_article_post(db, site, article, author_id=user.id)
-        if target_languages:
-            translation_results, changed_posts = _generate_translation_results(
-                db,
-                site,
-                article,
-                author_id=source_post.author_id,
-                source_post_id=source_post.id,
-                source_status=source_post.status,
-                payload=schemas.TranslationGenerateRequest(
-                    languages=target_languages,
-                    overwrite_existing=payload.overwrite_existing,
-                ),
-                allow_overwrite_published=True,
-            )
-        else:
-            translation_results, changed_posts = [], []
+        translation_results, changed_posts = _apply_generated_translations(
+            db,
+            site,
+            article,
+            author_id=source_post.author_id,
+            options=translation_options,
+            allow_overwrite_published=True,
+            work_items=work_items,
+            translated_by_language=translated_by_language,
+        )
     except TranslationUnavailableError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -444,15 +558,29 @@ def generate_translations(
         assert_language_belongs_to_site(site, language)
 
     try:
-        results, _ = _generate_translation_results(
+        work_items = _plan_translation_work(
+            db,
+            site,
+            source_article,
+            source_post_id=source_post.id,
+            source_status=source_post.status,
+            options=TranslationOptions(languages=payload.languages, overwrite_existing=payload.overwrite_existing),
+            allow_overwrite_published=False,
+        )
+        _end_transaction(db)
+        translated_by_language = _translate_work_items(source_article, work_items)
+
+        site = owned_site_or_404(db, user.id, site_id)
+        source_post = owned_post_or_404(db, site_id, post_id)
+        results, _ = _apply_generated_translations(
             db,
             site,
             source_article,
             author_id=source_post.author_id,
-            source_post_id=source_post.id,
-            source_status=source_post.status,
-            payload=payload,
+            options=TranslationOptions(languages=payload.languages, overwrite_existing=payload.overwrite_existing),
             allow_overwrite_published=False,
+            work_items=work_items,
+            translated_by_language=translated_by_language,
         )
     except TranslationUnavailableError as exc:
         db.rollback()
@@ -493,15 +621,29 @@ def generate_and_publish_translations(
         assert_language_belongs_to_site(site, language)
 
     try:
-        results, changed_posts = _generate_translation_results(
+        work_items = _plan_translation_work(
+            db,
+            site,
+            source_article,
+            source_post_id=source_post.id,
+            source_status=source_post.status,
+            options=TranslationOptions(languages=payload.languages, overwrite_existing=payload.overwrite_existing),
+            allow_overwrite_published=False,
+        )
+        _end_transaction(db)
+        translated_by_language = _translate_work_items(source_article, work_items)
+
+        site = owned_site_or_404(db, user.id, site_id)
+        source_post = owned_post_or_404(db, site_id, post_id)
+        results, changed_posts = _apply_generated_translations(
             db,
             site,
             source_article,
             author_id=source_post.author_id,
-            source_post_id=source_post.id,
-            source_status=source_post.status,
-            payload=payload,
+            options=TranslationOptions(languages=payload.languages, overwrite_existing=payload.overwrite_existing),
             allow_overwrite_published=False,
+            work_items=work_items,
+            translated_by_language=translated_by_language,
         )
     except TranslationUnavailableError as exc:
         db.rollback()

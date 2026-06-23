@@ -448,7 +448,7 @@ def test_generate_translation_drafts(monkeypatch) -> None:
 
     calls: list[tuple[str, str]] = []
 
-    async def fake_translate(source):
+    def fake_translate(source):
         calls.append((source.source_language, source.target_language))
         return TranslationResult(
             title=f"{source.target_language} title",
@@ -581,7 +581,7 @@ def test_generate_and_publish_translations_requires_access_key(monkeypatch) -> N
 
     calls: list[tuple[str, str]] = []
 
-    async def fake_translate(source):
+    def fake_translate(source):
         calls.append((source.source_language, source.target_language))
         return TranslationResult(
             title=f"{source.target_language} title",
@@ -701,7 +701,7 @@ def test_generate_and_publish_translations_from_template_article_requires_access
 
     calls: list[tuple[str, str]] = []
 
-    async def fake_translate(source):
+    def fake_translate(source):
         calls.append((source.source_language, source.target_language))
         return TranslationResult(
             title=f"{source.target_language} title",

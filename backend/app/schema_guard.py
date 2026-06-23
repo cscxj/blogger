@@ -10,11 +10,22 @@ DEFAULT_LANGUAGES = [{"key": "en", "label": "English"}]
 DEFAULT_LANGUAGES_JSON = json.dumps(DEFAULT_LANGUAGES)
 
 
-def _column_names(table: str) -> set[str]:
+def _columns(table: str) -> dict[str, dict[str, object]]:
     inspector = inspect(engine)
     if not inspector.has_table(table):
-        return set()
-    return {column["name"] for column in inspector.get_columns(table)}
+        return {}
+    return {column["name"]: column for column in inspector.get_columns(table)}
+
+
+def _column_names(table: str) -> set[str]:
+    return set(_columns(table))
+
+
+def _should_resize_post_language_column(posts_columns: dict[str, dict[str, object]]) -> bool:
+    language_column = posts_columns.get("language")
+    if not language_column:
+        return False
+    return getattr(language_column.get("type"), "length", None) != 64
 
 
 def _unique_constraint_names(table: str) -> set[str]:
@@ -43,14 +54,15 @@ def ensure_schema() -> None:
         else:
             _add_column("sites", f"languages JSON NOT NULL DEFAULT '{DEFAULT_LANGUAGES_JSON}'")
 
-    posts = _column_names("posts")
+    posts_columns = _columns("posts")
+    posts = set(posts_columns)
     if posts and "language" not in posts:
         _add_column("posts", "language VARCHAR(64) NOT NULL DEFAULT 'en'")
     if posts and "author_display_name" not in posts:
         _add_column("posts", "author_display_name VARCHAR(160)")
 
     with engine.begin() as connection:
-        if engine.dialect.name == "postgresql" and posts and "language" in posts:
+        if engine.dialect.name == "postgresql" and _should_resize_post_language_column(posts_columns):
             connection.execute(text("ALTER TABLE posts ALTER COLUMN language TYPE VARCHAR(64)"))
             post_constraints = _unique_constraint_names("posts")
             if "uq_posts_site_slug" in post_constraints:

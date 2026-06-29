@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import models, schemas
 from app.dependencies import require_super_admin, require_super_admin_access_key, require_user
 from app.db import get_db
-from app.markdown_render import render_markdown, sanitize_html_fragment
+from app.markdown_render import clean_article_markdown, render_markdown, sanitize_html_fragment
 from app.post_paths import localized_post_canonical_url
 from app.routers.sites import language_keys, owned_site_or_404
 from app.translation_service import (
@@ -87,6 +87,14 @@ def site_language_label(site: models.Site, language: str) -> str:
     return language
 
 
+def ordered_language_keys(site: models.Site) -> list[str]:
+    return [
+        str(language.get("key"))
+        for language in (site.languages or [])
+        if isinstance(language, dict) and language.get("key")
+    ]
+
+
 def post_by_language_and_slug(db: Session, site_id: str, language: str, slug: str) -> models.Post | None:
     return db.execute(
         select(models.Post).where(
@@ -136,10 +144,11 @@ def upsert_template_article_post(
         author_id=author_id,
     )
     sanitized_html = sanitize_html_fragment(article.html_content)
+    sanitized_markdown = clean_article_markdown(article.markdown_content) if article.markdown_content else sanitized_html
     post.title = article.title
     post.language = article.language
     post.slug = article.slug
-    post.markdown_content = article.markdown_content or sanitized_html
+    post.markdown_content = sanitized_markdown
     post.html_content = sanitized_html
     post.excerpt = article.excerpt
     post.cover_image_url = article.cover_image_url
@@ -401,11 +410,12 @@ def create_post(
     assert_post_slug_available(db, site_id, payload.language, payload.slug)
     assert_category_belongs_to_site(db, site_id, payload.category_id)
     data = payload.model_dump()
+    data["markdown_content"] = clean_article_markdown(payload.markdown_content)
     post = models.Post(
         site_id=site_id,
         author_id=user.id,
         status="draft",
-        html_content=render_markdown(payload.markdown_content),
+        html_content=render_markdown(data["markdown_content"]),
         **data,
     )
     db.add(post)
@@ -434,10 +444,11 @@ def import_post(
         )
 
     sanitized_html = sanitize_html_fragment(payload.html_content)
+    sanitized_markdown = clean_article_markdown(payload.markdown_content) if payload.markdown_content else sanitized_html
     post.title = payload.title
     post.language = payload.language
     post.slug = payload.slug
-    post.markdown_content = payload.markdown_content or sanitized_html
+    post.markdown_content = sanitized_markdown
     post.html_content = sanitized_html
     post.excerpt = payload.excerpt
     post.cover_image_url = payload.cover_image_url
@@ -486,7 +497,7 @@ def generate_and_publish_translations_from_article(
     for language in payload.languages:
         assert_language_belongs_to_site(site, language)
 
-    requested_languages = payload.languages or [language for language in language_keys(site) if language != article.language]
+    requested_languages = payload.languages or [language for language in ordered_language_keys(site) if language != article.language]
     target_languages = [language for language in requested_languages if language != article.language]
     translation_options = TranslationOptions(languages=target_languages, overwrite_existing=payload.overwrite_existing)
 
@@ -682,7 +693,8 @@ def update_post(
             current_id=post.id,
         )
     if "markdown_content" in data:
-        post.html_content = render_markdown(data["markdown_content"] or "")
+        data["markdown_content"] = clean_article_markdown(data["markdown_content"] or "")
+        post.html_content = render_markdown(data["markdown_content"])
     for field, value in data.items():
         setattr(post, field, value)
     db.add(post)
